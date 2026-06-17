@@ -14,7 +14,7 @@ from auth import get_credentials
 
 load_dotenv()
 
-PRIVACY = os.getenv("PRIVACY", "public")
+DEFAULT_PRIVACY = os.getenv("DEFAULT_PRIVACY", "public")
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
@@ -39,7 +39,7 @@ class UploadConfig(BaseModel):
     description: str
     tags: list[str]
     genre: str = "default"
-    privacy: str = "public"     # defaults to public
+    default_privacy: str = "public"     # defaults to public
     made_for_kids: bool = False
 
     @property
@@ -69,7 +69,7 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
                 "categoryId": config.category_id,
             },
             "status": {
-                "privacyStatus": config.privacy,
+                "privacyStatus": config.default_privacy,
                 "madeForKids": config.made_for_kids,
             }
         }

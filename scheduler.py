@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from metadata import generate_metadata_async
-from uploader import UploadConfig, upload_video, PRIVACY
+from uploader import UploadConfig, upload_video, DEFAULT_PRIVACY
 from drive import download_video
 
 logger = logging.getLogger(__name__)
@@ -21,13 +21,13 @@ class Job:
         vibe:        The niche/energy e.g. 'funny meme', 'gaming fail', 'satisfying'.
         drive_url:   Google Drive shareable link to the video (optional).
         genre:       Broad genre used to pick a YouTube category (comedy, gaming, etc.).
-        privacy:     'private', 'unlisted', or 'public'. Defaults to 'private' — change when ready.
+        default_privacy:     'private', 'unlisted', or 'public'. Defaults to 'private' — change when ready.
     """
     vibe: str
     video_path: Optional[str] = None
     drive_url: Optional[str] = None
     genre: str = "comedy"
-    privacy: str = PRIVACY
+    default_privacy: str = DEFAULT_PRIVACY
 
     def __post_init__(self):
         from uploader import GENRE_CATEGORY_MAP
@@ -78,7 +78,7 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
             description=metadata["description"],
             tags=metadata["tags"],
             genre=job.genre,
-            privacy=job.privacy,
+            default_privacy=job.default_privacy,
         )
 
         video_id = await upload_video(config)

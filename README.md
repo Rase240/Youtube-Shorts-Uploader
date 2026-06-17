@@ -66,6 +66,6 @@ youtube_bot/
 
 ## Important Notes & Quotas
 
-- **Privacy**: Videos upload as `private` by default. You can change this in `main.py` by adding `privacy="public"` to your `Job`.
+- **Privacy**: Videos upload as `private` by default. You can change this in `main.py` by adding `default_privacy="public"` to your `Job`.
 - **YouTube Quotas**: The free tier of the YouTube Data API provides 10,000 quota units per day. A video upload costs 1,600 units, allowing for about **6 uploads per day**.
 - **Concurrency**: `max_concurrent=2` in `main.py` is recommended to stay within safe API request limits.

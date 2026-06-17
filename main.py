@@ -12,7 +12,7 @@ async def main():
     # drive_url   → Google Drive shareable link to the video (or video_path for local file)
     # vibe        → the energy/niche: 'funny meme', 'gaming fail', 'satisfying', etc.
     # genre       → broad category: comedy, gaming, music, education, entertainment, etc.
-    # privacy     → 'public' by default, or you can specify 'private' or 'unlisted'
+    # default_privacy     → 'public' by default, or you can specify 'private' or 'unlisted'
     # ─────────────────────────────────────────────
     jobs = [
         Job(
