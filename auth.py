@@ -14,9 +14,9 @@ CLIENT_SECRETS_PATH = os.path.join(
 )
 TOKEN_PATH = os.path.join(_PROJECT_DIR, "token.pickle")
 
-# Only YouTube upload — Drive downloads are public, no auth needed
+# YouTube access for upload, delete, update, and read
 SCOPES = [
-    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube",
 ]
 
 def get_credentials():
@@ -29,6 +29,11 @@ def get_credentials():
     if os.path.exists(TOKEN_PATH):
         with open(TOKEN_PATH, "rb") as f:
             creds = pickle.load(f)
+
+    # Force re-authentication if cached credentials do not contain all required scopes
+    if creds and hasattr(creds, 'scopes'):
+        if not all(scope in creds.scopes for scope in SCOPES):
+            creds = None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
