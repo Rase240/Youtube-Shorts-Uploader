@@ -26,7 +26,7 @@ class Job:
     vibe: str
     video_path: Optional[str] = None
     drive_url: Optional[str] = None
-    genre: str = "comedy"
+    genre: str = "default"
     default_privacy: str = DEFAULT_PRIVACY
 
     def __post_init__(self):

@@ -10,9 +10,10 @@ logger = logging.getLogger(__name__)
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
-from auth import get_credentials
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_PROJECT_DIR, ".env"))
 
-load_dotenv()
+from auth import get_credentials
 
 DEFAULT_PRIVACY = os.getenv("DEFAULT_PRIVACY", "public")
 

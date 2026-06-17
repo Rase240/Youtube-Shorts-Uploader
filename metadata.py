@@ -9,8 +9,8 @@ from google.genai import types
 from google.genai.errors import APIError
 from pydantic import BaseModel, Field, field_validator
 
-load_dotenv()
-
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_PROJECT_DIR, ".env"))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
