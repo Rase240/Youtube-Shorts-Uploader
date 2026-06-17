@@ -39,7 +39,7 @@ class UploadConfig(BaseModel):
     description: str
     tags: list[str]
     genre: str = "default"
-    default_privacy: str = "public"     # defaults to public
+    default_privacy: str = DEFAULT_PRIVACY
     made_for_kids: bool = False
 
     @property
