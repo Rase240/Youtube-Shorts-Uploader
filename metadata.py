@@ -16,30 +16,36 @@ logger = logging.getLogger(__name__)
 
 
 class YouTubeShortMetadata(BaseModel):
+    target_emotion: str = Field(
+        ...,
+        description="The primary emotion the video triggers (e.g. curiosity, amusement, outrage, nostalgia, awe)."
+    )
+    hook_style: str = Field(
+        ...,
+        description="The hook technique used (e.g. 'unanswered question', 'pattern interrupt', 'relatable scenario')."
+    )
     title: str = Field(
         ...,
         description=(
-            "A punchy, viral YouTube Shorts title under 100 characters. "
-            "Make it curiosity-driven, emotional, or shocking. No clickbait fluff — "
+            "A punchy, viral YouTube Shorts title under 55 characters. "
+            "Start with the most emotional/curiosity-driven words. No clickbait fluff — "
             "it should reflect the actual vibe of the video."
         )
     )
     description: str = Field(
         ...,
         description=(
-            "A 150-250 word YouTube Shorts description based on watching the video. "
-            "Open with a strong hook sentence. "
-            "Naturally weave in searchable keywords for the niche. "
-            "End with 10-15 trending hashtags on separate lines (e.g. #Memes #Funny). "
-            "Keep the tone matching the video — funny, hype, relatable, etc."
+            "A concise 100-150 word YouTube Shorts description. "
+            "Line 1 MUST be a high-impact hook. Lines 2-4 should weave in searchable niche keywords naturally. "
+            "End with exactly 4-6 highly relevant hashtags on separate lines (e.g. #Shorts, #Topic). "
+            "Do not use generic intros like 'In this video...' or 'Welcome back...'"
         )
     )
     tags: list[str] = Field(
         ...,
         description=(
-            "12-20 high-search-volume YouTube tags relevant to the video. "
-            "Mix broad tags with niche-specific ones based on the video content. "
-            "Do NOT include the # symbol in tags."
+            "10-15 high-search-volume YouTube tags relevant to the video (no # symbols). "
+            "Mix broad tags with niche-specific ones based on the video content."
         )
     )
     thumbnail_recommendation: str = Field(
@@ -47,14 +53,14 @@ class YouTubeShortMetadata(BaseModel):
         description=(
             "A recommendation for the perfect custom thumbnail. "
             "Suggest the exact timestamp to pull the frame from (e.g. '00:04 where the cat jumps') "
-            "and describe any text or graphics that should be overlaid to maximize CTR."
+            "and describe any text/graphics that should be overlaid to maximize CTR."
         )
     )
 
     @field_validator("title")
     @classmethod
     def cap_title(cls, v: str) -> str:
-        return v[:97] + "..." if len(v) > 100 else v
+        return v[:52] + "..." if len(v) > 55 else v
 
     @field_validator("tags")
     @classmethod
@@ -101,17 +107,18 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
 
             # 3. Generate content
             prompt = f"""
-You are a viral YouTube Shorts growth expert. I have attached a video for you to watch.
+You are an expert YouTube Shorts content strategist specializing in viral organic growth.
+I have attached a video for you to watch.
+
 The intended vibe/niche is: {vibe}
 
 Please watch the video carefully and generate metadata that maximises CTR, watch time, and engagement.
 
-Rules:
-- Title must feel native to the platform — punchy, short, conversational.
-- Description must include 10-15 relevant hashtags at the end (one per line).
-- Tags should cover what people actually search for in this niche.
-- Suggest a specific timestamp and overlay text for a custom thumbnail.
-- Do NOT mention "clipping channel", "faceless channel", or anything about automation.
+Strict Constraints:
+- NEVER use generic AI buzzwords: 'unleash', 'dive in', 'delve', 'testament', 'ultimate guide', 'revolutionize', 'look no further', 'mastering', 'nestled'.
+- Keep titles under 55 characters so they do not get truncated on mobile screens.
+- Do NOT use formal greetings or meta-commentary (e.g. 'Check out this video!'). Write exactly how a real creator or viewer would talk.
+- Do NOT mention clipping, automation, or bot channels.
 """
             response = None
             models_to_try = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
