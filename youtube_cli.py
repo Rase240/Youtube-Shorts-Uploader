@@ -64,33 +64,49 @@ async def handle_list(args):
             
         uploads_playlist_id = channels_response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
         
-        playlist_items = []
-        next_page_token = None
-        
-        # Fetch up to 50 videos (can do page iteration if more is needed, but 50 is fine)
+        # Fetch up to 50 videos
         res = youtube.playlistItems().list(
             playlistId=uploads_playlist_id,
             part="snippet,status",
-            maxResults=50,
-            pageToken=next_page_token
+            maxResults=50
         ).execute()
         
-        playlist_items.extend(res.get("items", []))
-            
-        videos = []
+        playlist_items = res.get("items", [])
+
+        # Collect video IDs to batch-fetch statistics
+        video_ids = []
+        basic_map = {}
         for item in playlist_items:
             snippet = item.get("snippet", {})
             status = item.get("status", {})
-            video_id = snippet.get("resourceId", {}).get("videoId")
-            title = snippet.get("title")
-            privacy = status.get("privacyStatus", "unknown")
-            published_at = snippet.get("publishedAt")
-            videos.append({
-                "id": video_id,
-                "title": title,
-                "privacy": privacy,
-                "publishedAt": published_at
-            })
+            vid = snippet.get("resourceId", {}).get("videoId")
+            if vid:
+                video_ids.append(vid)
+                basic_map[vid] = {
+                    "id": vid,
+                    "title": snippet.get("title"),
+                    "privacy": status.get("privacyStatus", "unknown"),
+                    "publishedAt": snippet.get("publishedAt"),
+                    "views": 0,
+                    "likes": 0,
+                    "comments": 0
+                }
+
+        # Batch fetch statistics (max 50 IDs per call, which matches our limit)
+        if video_ids:
+            stats_res = youtube.videos().list(
+                id=",".join(video_ids),
+                part="statistics"
+            ).execute()
+            for stat_item in stats_res.get("items", []):
+                vid = stat_item["id"]
+                stats = stat_item.get("statistics", {})
+                if vid in basic_map:
+                    basic_map[vid]["views"] = int(stats.get("viewCount", 0))
+                    basic_map[vid]["likes"] = int(stats.get("likeCount", 0))
+                    basic_map[vid]["comments"] = int(stats.get("commentCount", 0))
+
+        videos = [basic_map[vid] for vid in video_ids if vid in basic_map]
         return videos
 
     try:
@@ -154,7 +170,8 @@ async def main():
     upload_parser.add_argument('--privacy', default='public', help="Privacy status")
 
     # list subcommand
-    subparsers.add_parser("list", help="List uploaded videos")
+    list_parser = subparsers.add_parser("list", help="List uploaded videos")
+    list_parser.add_argument('--sort', default='date', choices=['date', 'views', 'likes', 'comments'], help="Sort order for video list")
 
     # setprivacy subcommand
     setprivacy_parser = subparsers.add_parser("setprivacy", help="Set privacy status of a video")

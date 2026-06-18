@@ -40,4 +40,3 @@ venv/
 .idea/
 .vscode/
 *.swp
-upload_cli.py
