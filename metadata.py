@@ -37,7 +37,7 @@ class YouTubeShortMetadata(BaseModel):
         description=(
             "A concise 100-150 word YouTube Shorts description. "
             "Line 1 MUST be a high-impact hook. Lines 2-4 should weave in searchable niche keywords naturally. "
-            "End with exactly 4-6 highly relevant hashtags on separate lines (e.g. #Shorts, #Topic). "
+            "End with exactly 4-7 highly relevant hashtags on separate lines (e.g. #Shorts, #Topic). "
             "Do not use generic intros like 'In this video...' or 'Welcome back...'"
         )
     )
