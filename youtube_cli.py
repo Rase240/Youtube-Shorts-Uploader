@@ -5,7 +5,7 @@ import uuid
 import os
 import json
 import sys
-from scheduler import Job, run_batch
+from scheduler import Job, run_batch, process_job
 
 async def handle_upload(args):
     video_path = None
@@ -34,11 +34,12 @@ async def handle_upload(args):
     )
     
     try:
-        video_ids = await run_batch([job], max_concurrent=1)
-        if video_ids:
-            print(f"SUCCESS: {video_ids[0]}")
+        semaphore = asyncio.Semaphore(1)
+        video_id = await process_job(job, semaphore)
+        if video_id:
+            print(f"SUCCESS: {video_id}")
         else:
-            print("FAILED", file=sys.stderr)
+            print("FAILED: Job completed but returned no video ID.", file=sys.stderr)
             sys.exit(1)
     except Exception as e:
         print(f"Job Failed: {e}", file=sys.stderr)

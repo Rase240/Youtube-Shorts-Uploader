@@ -104,7 +104,8 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
         return video_id
     except HttpError as e:
         logger.error(f"YouTube API error: {e.resp.status} - {e.content}")
-        return None
+        raise RuntimeError(f"YouTube API error {e.resp.status}: {e.content}") from e
     except Exception as e:
         logger.error(f"Upload failed: {e}")
-        return None
+        raise RuntimeError(f"Upload failed: {e}") from e
+

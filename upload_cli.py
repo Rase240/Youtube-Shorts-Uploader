@@ -3,7 +3,7 @@ import asyncio
 import requests
 import uuid
 import os
-from scheduler import Job, run_batch
+from scheduler import Job, run_batch, process_job
 
 async def main():
     parser = argparse.ArgumentParser(description="CLI for uploading a single video to YouTube via youtube_bot")
@@ -41,11 +41,12 @@ async def main():
     )
     
     try:
-        video_ids = await run_batch([job], max_concurrent=1)
-        if video_ids:
-            print(f"SUCCESS: {video_ids[0]}")
+        semaphore = asyncio.Semaphore(1)
+        video_id = await process_job(job, semaphore)
+        if video_id:
+            print(f"SUCCESS: {video_id}")
         else:
-            print("FAILED")
+            print("FAILED: Job completed but returned no video ID.")
     except Exception as e:
         print(f"Job Failed: {e}")
     finally:

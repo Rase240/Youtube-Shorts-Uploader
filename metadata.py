@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import sys
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 from dotenv import load_dotenv
 from google import genai
@@ -11,7 +13,29 @@ from pydantic import BaseModel, Field, field_validator
 
 _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_PROJECT_DIR, ".env"))
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Set up logging to both console and a rotating file
+_LOG_FORMAT = "%(asctime)s - %(levelname)s - [%(name)s] - %(message)s"
+_LOG_FILE = os.path.join(_PROJECT_DIR, "youtube_bot.log")
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Prevent duplicate handlers
+if not root_logger.handlers:
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    root_logger.addHandler(console_handler)
+
+    # Rotating File handler (max 5MB, keeping 3 backups)
+    try:
+        file_handler = RotatingFileHandler(_LOG_FILE, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+        root_logger.addHandler(file_handler)
+    except Exception as e:
+        sys.stderr.write(f"Failed to initialize file logging: {e}\n")
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,7 +124,7 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
                     break
                 elif video_file.state == "FAILED":
                     logger.error("[GEMINI] Video processing failed on Google's end.")
-                    return None
+                    raise RuntimeError("Video processing failed on Google's end.")
                 await asyncio.sleep(2)
 
             logger.info("[GEMINI] Video ready. Generating metadata...")
@@ -156,7 +180,7 @@ Strict Constraints:
                 return json.loads(response.text)
             else:
                 logger.error("Empty or failed response from Gemini after trying all models.")
-                return None
+                raise RuntimeError("Empty or failed response from Gemini after trying all models.")
 
         finally:
             # 4. Clean up the file to save quota space
@@ -165,13 +189,13 @@ Strict Constraints:
 
     except APIError as e:
         logger.error(f"Gemini API error: {e}")
-        return None
+        raise RuntimeError(f"Gemini API error: {e}") from e
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Gemini output as JSON: {e}")
-        return None
+        raise RuntimeError(f"Failed to parse Gemini output as JSON: {e}") from e
     except Exception as e:
         logger.error(f"Unexpected error generating metadata: {e}")
-        return None
+        raise RuntimeError(f"Unexpected error generating metadata: {e}") from e
 
 
 # --- Quick test ---

@@ -51,12 +51,11 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
             logger.info(f"[START] Downloading from Drive: {job.drive_url}")
             success = await download_video(job.drive_url, active_video_path)
             if not success:
-                return None
+                raise RuntimeError(f"Google Drive download failed for URL: {job.drive_url}")
             cleanup_needed = True
         
         if not active_video_path:
-            logger.error("[FAIL] Neither video_path nor drive_url provided.")
-            return None
+            raise ValueError("Neither video_path nor drive_url was provided.")
 
         logger.info(f"[START] Processing {active_video_path}")
 
@@ -64,8 +63,7 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
         metadata = await generate_metadata_async(active_video_path, job.vibe)
 
         if not metadata:
-            logger.error(f"[FAIL] Metadata generation failed for {active_video_path}")
-            return None
+            raise RuntimeError(f"Metadata generation failed for {active_video_path}")
 
         logger.info(f"[META] Title: {metadata['title']}")
         logger.info(f"[META] Tags ({len(metadata['tags'])}): {', '.join(metadata['tags'][:5])}...")
@@ -81,18 +79,17 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
             default_privacy=job.default_privacy,
         )
 
-        video_id = await upload_video(config)
-        
-        if cleanup_needed and os.path.exists(active_video_path):
-            os.remove(active_video_path)
-            logger.info(f"[CLEANUP] Deleted temporary file {active_video_path}")
-
-        if video_id:
-            logger.info(f"[DONE] Uploaded → https://www.youtube.com/shorts/{video_id}")
-        else:
-            logger.error(f"[FAIL] Upload failed for {active_video_path}")
-
-        return video_id
+        try:
+            video_id = await upload_video(config)
+            if video_id:
+                logger.info(f"[DONE] Uploaded → https://www.youtube.com/shorts/{video_id}")
+            else:
+                raise RuntimeError(f"Upload failed for {active_video_path}")
+            return video_id
+        finally:
+            if cleanup_needed and os.path.exists(active_video_path):
+                os.remove(active_video_path)
+                logger.info(f"[CLEANUP] Deleted temporary file {active_video_path}")
 
 
 async def run_batch(jobs: list[Job], max_concurrent: int = 2) -> list[str]:
