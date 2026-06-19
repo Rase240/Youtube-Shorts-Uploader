@@ -145,6 +145,7 @@ Strict Constraints:
 - Do NOT mention clipping, automation, or bot channels.
 """
             response = None
+            parsed_data = None
             models_to_try = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
             
             for model_name in models_to_try:
@@ -161,8 +162,12 @@ Strict Constraints:
                                 max_output_tokens=1500,
                             ),
                         )
-                        success = True
-                        break
+                        if response and response.text:
+                            parsed_data = json.loads(response.text)
+                            success = True
+                            break
+                        else:
+                            logger.warning(f"[GEMINI] Empty response text on {model_name} attempt {attempt + 1}/3.")
                     except APIError as e:
                         if "UNAVAILABLE" in str(e).upper():
                             if attempt < 2:
@@ -172,12 +177,20 @@ Strict Constraints:
                                 logger.error(f"[GEMINI] {model_name} failed after 3 attempts.")
                         else:
                             raise e
+                    except json.JSONDecodeError as je:
+                        logger.warning(f"[GEMINI] Failed to parse JSON on attempt {attempt + 1}/3: {je}")
+                        try:
+                            logger.warning(f"Raw response text that failed:\n{response.text}")
+                        except Exception:
+                            pass
+                        if attempt >= 2:
+                            raise je
                 
                 if success:
                     break
 
-            if response and response.text:
-                return json.loads(response.text)
+            if parsed_data:
+                return parsed_data
             else:
                 logger.error("Empty or failed response from Gemini after trying all models.")
                 raise RuntimeError("Empty or failed response from Gemini after trying all models.")
@@ -192,6 +205,11 @@ Strict Constraints:
         raise RuntimeError(f"Gemini API error: {e}") from e
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Gemini output as JSON: {e}")
+        try:
+            if 'response' in locals() and response and hasattr(response, 'text'):
+                logger.error(f"Raw Gemini response that failed to parse:\n{response.text}")
+        except Exception:
+            pass
         raise RuntimeError(f"Failed to parse Gemini output as JSON: {e}") from e
     except Exception as e:
         logger.error(f"Unexpected error generating metadata: {e}")

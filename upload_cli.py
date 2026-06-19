@@ -30,6 +30,8 @@ async def main():
             print(f"Downloaded to {video_path}")
         except Exception as e:
             print(f"Failed to download from Discord: {e}")
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
             return
 
     job = Job(

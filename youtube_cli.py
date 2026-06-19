@@ -23,6 +23,8 @@ async def handle_upload(args):
             print(f"Downloaded to {video_path}", file=sys.stderr)
         except Exception as e:
             print(f"Failed to download from Discord: {e}", file=sys.stderr)
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
             sys.exit(1)
 
     job = Job(
