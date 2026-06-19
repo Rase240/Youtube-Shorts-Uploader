@@ -40,3 +40,8 @@ venv/
 .idea/
 .vscode/
 *.swp
+
+# Logs
+*.log
+*.log.*
+
