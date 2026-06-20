@@ -65,7 +65,12 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
         from video_processor import get_video_info, pad_video_for_shorts
         info = get_video_info(active_video_path)
         
-        if info["duration"] > 60:
+        if info["duration"] == 0:
+            logger.warning(f"[WARNING] Could not read video info for {active_video_path}. "
+                           "Check that ffmpeg is installed (sudo apt install ffmpeg). "
+                           "Skipping preprocessing — video will upload as-is.")
+            print(f"[WARNING] Could not read video info. Is ffmpeg installed? Uploading as-is.", file=sys.stderr)
+        elif info["duration"] > 60:
             if not job.force_normal:
                 if sys.stdin.isatty():
                     # Standalone interactive terminal mode
