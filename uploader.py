@@ -71,7 +71,7 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
             },
             "status": {
                 "privacyStatus": config.default_privacy,
-                "madeForKids": config.made_for_kids,
+                "selfDeclaredMadeForKids": config.made_for_kids,
             }
         }
 
