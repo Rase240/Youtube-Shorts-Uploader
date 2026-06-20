@@ -1,7 +1,13 @@
 import os
 import logging
-from moviepy.editor import VideoFileClip, CompositeVideoClip
 from PIL import Image, ImageFilter
+import PIL.Image
+
+# Compatibility shim: Pillow 10+ removed ANTIALIAS, but moviepy 1.x still uses it internally.
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
+from moviepy.editor import VideoFileClip, CompositeVideoClip
 import numpy as np
 
 logger = logging.getLogger(__name__)
