@@ -40,6 +40,14 @@ logger = logging.getLogger(__name__)
 
 
 class YouTubeShortMetadata(BaseModel):
+    video_analysis: str = Field(
+        ...,
+        description=(
+            "Briefly analyze the video's visual hooks, pacing, and core message. "
+            "Identify the most striking moment or conflict that will capture attention. "
+            "This is your 'scratchpad' to think before generating the metadata."
+        )
+    )
     target_emotion: str = Field(
         ...,
         description="The primary emotion the video triggers (e.g. curiosity, amusement, outrage, nostalgia, awe)."
@@ -51,18 +59,20 @@ class YouTubeShortMetadata(BaseModel):
     title: str = Field(
         ...,
         description=(
-            "A punchy, viral YouTube Shorts title under 55 characters. "
-            "Start with the most emotional/curiosity-driven words. No clickbait fluff — "
-            "it should reflect the actual vibe of the video."
+            "A hyper-engaging, attention-grabbing YouTube Shorts title under 55 characters. "
+            "Use extreme curiosity gaps, bold claims, relatable pain points, or negative hooks. "
+            "Front-load the most important keywords. Focus on the core conflict or punchline. "
+            "Avoid boring descriptive titles. Lowercase and emojis are allowed if they fit the vibe."
         )
     )
     description: str = Field(
         ...,
         description=(
-            "A concise 100-150 word YouTube Shorts description. "
-            "Line 1 MUST be a high-impact hook. Lines 2-4 should weave in searchable niche keywords naturally. "
+            "A concise YouTube Shorts description. "
+            "Line 1 MUST be a hard-hitting hook or controversial question. "
+            "Lines 2-3 should provide brief, natural-sounding context that weaves in SEO keywords. "
             "End with exactly 4-7 highly relevant hashtags on separate lines (e.g. #Shorts, #Topic). "
-            "Do not use generic intros like 'In this video...' or 'Welcome back...'"
+            "Never use generic AI intros like 'In this video...' or 'Welcome back...'."
         )
     )
     tags: list[str] = Field(
@@ -131,18 +141,25 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
 
             # 3. Generate content
             prompt = f"""
-You are an expert YouTube Shorts content strategist specializing in viral organic growth.
+You are a top-tier Gen-Z YouTube Shorts strategist and growth hacker, famous for viral hooks and massive CTRs.
 I have attached a video for you to watch.
 
 The intended vibe/niche is: {vibe}
 
-Please watch the video carefully and generate metadata that maximises CTR, watch time, and engagement.
+Follow these steps:
+1. ANALYZE: Watch the video carefully. Use the `video_analysis` field to break down the most satisfying, funny, or controversial moment.
+2. HOOK: Determine the `target_emotion` and `hook_style`.
+3. TITLES & METADATA: Craft metadata that absolutely forces a viewer to stop scrolling. 
 
-Strict Constraints:
-- NEVER use generic AI buzzwords: 'unleash', 'dive in', 'delve', 'testament', 'ultimate guide', 'revolutionize', 'look no further', 'mastering', 'nestled'.
-- Keep titles under 55 characters so they do not get truncated on mobile screens.
-- Do NOT use formal greetings or meta-commentary (e.g. 'Check out this video!'). Write exactly how a real creator or viewer would talk.
-- Do NOT mention clipping, automation, or bot channels.
+Strict Constraints for Titles & Descriptions:
+- TITLES MUST BE EXTREMELY CLICKABLE. Use strong curiosity gaps (e.g., "I tried...", "Why you shouldn't..."), extreme outcomes, or highly relatable scenarios. NO boring literal descriptions.
+- NEVER use generic AI buzzwords: 'unleash', 'dive in', 'delve', 'testament', 'ultimate guide', 'revolutionize', 'look no further', 'mastering', 'epic'.
+- Title length: Keep it under 55 characters to avoid mobile truncation.
+- Tone: Write exactly how a real native Shorts creator would talk. NO formal greetings or meta-commentary (e.g., "Check out this video!").
+- Formatting: Use natural pacing. Emojis are okay but don't overdo them. Lowercase is great if it fits the Gen-Z aesthetic.
+
+Example of BAD Title: "A Funny Dog Playing With A Ball #Shorts"
+Example of GOOD Title: "he actually thought this would work 💀" or "the ending was personal..."
 """
             response = None
             parsed_data = None
