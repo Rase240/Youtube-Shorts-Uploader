@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -28,6 +29,7 @@ class Job:
     drive_url: Optional[str] = None
     genre: str = "default"
     default_privacy: str = DEFAULT_PRIVACY
+    force_normal: bool = False
 
     def __post_init__(self):
         from uploader import GENRE_CATEGORY_MAP
@@ -58,6 +60,37 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
             raise ValueError("Neither video_path nor drive_url was provided.")
 
         logger.info(f"[START] Processing {active_video_path}")
+
+        # Preprocessing: Check length and aspect ratio
+        from video_processor import get_video_info, pad_video_for_shorts
+        info = get_video_info(active_video_path)
+        
+        if info["duration"] > 60:
+            if not job.force_normal:
+                if sys.stdin.isatty():
+                    # Standalone interactive terminal mode
+                    print(f"\n[WARNING] Video '{active_video_path}' is {info['duration']:.1f}s long (limit is 60s).")
+                    print("YouTube will treat this as a NORMAL long-form video, NOT a Short.")
+                    loop = asyncio.get_event_loop()
+                    ans = await loop.run_in_executor(None, input, "Do you want to upload it as a normal video? (y/n): ")
+                    if ans.strip().lower() != 'y':
+                        raise RuntimeError("Upload aborted by user: video too long for Shorts.")
+                else:
+                    # Non-interactive mode (e.g. running via Discord bot exec)
+                    print("VIDEO_TOO_LONG: Video exceeds 60s limit for Shorts.", file=sys.stderr)
+                    raise RuntimeError("VIDEO_TOO_LONG")
+            else:
+                print(f"[WARNING] Video '{active_video_path}' is {info['duration']:.1f}s long. Uploading as normal video due to force_normal flag.")
+        elif info["duration"] > 0:
+            # If it's a valid duration <= 60s, ensure it is vertical
+            if info["is_horizontal"]:
+                print(f"[PREPROCESS] Padding horizontal video {active_video_path}...")
+                padded_path = await asyncio.get_event_loop().run_in_executor(None, pad_video_for_shorts, active_video_path)
+                if padded_path != active_video_path:
+                    if cleanup_needed and os.path.exists(active_video_path):
+                        os.remove(active_video_path)
+                    active_video_path = padded_path
+                    cleanup_needed = True
 
         # Gemini watches the video and generates metadata
         metadata = await generate_metadata_async(active_video_path, job.vibe)

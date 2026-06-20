@@ -32,7 +32,8 @@ async def handle_upload(args):
         drive_url=args.drive_url,
         video_path=video_path,
         genre=args.genre,
-        default_privacy=args.privacy
+        default_privacy=args.privacy,
+        force_normal=args.force_normal
     )
     
     try:
@@ -171,6 +172,7 @@ async def main():
     upload_parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
     upload_parser.add_argument('--genre', default='comedy', help="Genre for YouTube category")
     upload_parser.add_argument('--privacy', default='public', help="Privacy status")
+    upload_parser.add_argument('--force_normal', action='store_true', help="Force upload as normal video without padding")
 
     # list subcommand
     list_parser = subparsers.add_parser("list", help="List uploaded videos")
