@@ -71,7 +71,9 @@ class YouTubeShortMetadata(BaseModel):
             "A concise YouTube Shorts description. "
             "Line 1 MUST be a hard-hitting hook or controversial question. "
             "Lines 2-3 should provide brief, natural-sounding context that weaves in SEO keywords. "
-            "End with exactly 4-7 highly relevant hashtags on separate lines (e.g. #Shorts, #Topic). "
+            "End with exactly 5-7 highly specific, algorithm-friendly hashtags on a single line. "
+            "CRITICAL: NEVER use generic, spammy, or cringy hashtags like #viral, #funnymemes, #trending, #fyp, or #Shorts. "
+            "Only use strictly relevant, high-search-volume niche tags (e.g., #CarRestoration, #BakingFails). "
             "Never use generic AI intros like 'In this video...' or 'Welcome back...'."
         )
     )
@@ -79,7 +81,9 @@ class YouTubeShortMetadata(BaseModel):
         ...,
         description=(
             "10-15 high-search-volume YouTube tags relevant to the video (no # symbols). "
-            "Mix broad tags with niche-specific ones based on the video content."
+            "CRITICAL: Ban all generic tags (viral, funny, meme, trending, shorts). "
+            "Focus ONLY on strict SEO entity keywords. If the video is about a dog eating pizza, "
+            "tags should be 'golden retriever', 'dog eating human food', 'funny dog compilation', NOT 'funnymemes'."
         )
     )
     thumbnail_recommendation: str = Field(
@@ -154,6 +158,7 @@ Follow these steps:
 Strict Constraints for Titles & Descriptions:
 - TITLES MUST BE EXTREMELY CLICKABLE. Use strong curiosity gaps (e.g., "I tried...", "Why you shouldn't..."), extreme outcomes, or highly relatable scenarios. NO boring literal descriptions.
 - NEVER use generic AI buzzwords: 'unleash', 'dive in', 'delve', 'testament', 'ultimate guide', 'revolutionize', 'look no further', 'mastering', 'epic'.
+- HASHTAGS MUST BE NICHE-SPECIFIC. Do not use generic tags like #viral, #funnymemes, #trending, #shorts. Use exact entities (e.g., #Woodworking, #GoldenRetriever).
 - Title length: Keep it under 55 characters to avoid mobile truncation.
 - Tone: Write exactly how a real native Shorts creator would talk. NO formal greetings or meta-commentary (e.g., "Check out this video!").
 - Formatting: Use natural pacing. Emojis are okay but don't overdo them. Lowercase is great if it fits the Gen-Z aesthetic.
