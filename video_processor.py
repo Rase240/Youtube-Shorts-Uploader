@@ -57,12 +57,13 @@ def pad_video_for_shorts(video_path: str) -> str:
 
     try:
         # ffmpeg filter:
-        #   [bg] = scale DOWN to tiny size, blur (cheap), scale back UP (natural blur effect), darken
+        #   [bg] = scale to fill 1080x1920, crop to exact size, blur + darken
         #   [fg] = scale to fit 1080 width, keep aspect ratio
         #   overlay [fg] centered on [bg]
         filter_complex = (
-            "[0:v]scale=108:192,boxblur=4:1,"
-            "scale=1080:1920,"
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "boxblur=20:5,"
             "colorlevels=rimax=0.6:gimax=0.6:bimax=0.6[bg];"
             "[0:v]scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
             "[bg][fg]overlay=(W-w)/2:(H-h)/2"
