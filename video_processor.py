@@ -57,14 +57,14 @@ def pad_video_for_shorts(video_path: str) -> str:
 
     try:
         # ffmpeg filter:
-        #   [bg] = scale to fill 1080x1920, crop to 1080x1920, blur + darken
-        #   [fg] = scale to fit within 1080 width, maintain aspect ratio
+        #   [bg] = scale up to fill 1080x1920, crop to exact size, blur + darken
+        #   [fg] = scale down to fit 1080 width, keep aspect ratio (height auto)
         #   overlay [fg] centered on [bg]
         filter_complex = (
             "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
             "crop=1080:1920,"
-            "gblur=sigma=15,"
-            "eq=brightness=-0.15[bg];"
+            "boxblur=20:5,"
+            "colorlevels=rimax=0.6:gimax=0.6:bimax=0.6[bg];"
             "[0:v]scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
             "[bg][fg]overlay=(W-w)/2:(H-h)/2"
         )
@@ -82,13 +82,15 @@ def pad_video_for_shorts(video_path: str) -> str:
             output_path
         ]
 
+        logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
+
         result = subprocess.run(
             cmd,
             capture_output=True, text=True, timeout=300
         )
 
         if result.returncode != 0:
-            logger.error(f"ffmpeg padding failed: {result.stderr[-500:]}")
+            logger.error(f"ffmpeg padding failed (exit code {result.returncode}): {result.stderr[-2000:]}")
             return video_path
 
         logger.info(f"Successfully processed video into {output_path}")
