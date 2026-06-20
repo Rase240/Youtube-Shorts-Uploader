@@ -1,85 +1,102 @@
 import os
+import json
 import logging
-from PIL import Image, ImageFilter
-import PIL.Image
-
-# Compatibility shim: Pillow 10+ removed ANTIALIAS, but moviepy 1.x still uses it internally.
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-
-from moviepy.editor import VideoFileClip, CompositeVideoClip
-import numpy as np
+import subprocess
 
 logger = logging.getLogger(__name__)
 
+
 def get_video_info(video_path: str) -> dict:
-    """Returns duration, width, height, and boolean if horizontal."""
+    """Returns duration, width, height, and boolean if horizontal using ffprobe."""
     try:
-        with VideoFileClip(video_path) as clip:
-            info = {
-                "duration": clip.duration,
-                "width": clip.w,
-                "height": clip.h,
-                "is_horizontal": clip.w > clip.h
-            }
-            return info
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-print_format", "json",
+                "-show_streams", "-show_format",
+                video_path
+            ],
+            capture_output=True, text=True, timeout=30
+        )
+        data = json.loads(result.stdout)
+
+        # Find the video stream
+        video_stream = None
+        for stream in data.get("streams", []):
+            if stream.get("codec_type") == "video":
+                video_stream = stream
+                break
+
+        if not video_stream:
+            logger.error(f"No video stream found in {video_path}")
+            return {"duration": 0, "width": 0, "height": 0, "is_horizontal": False}
+
+        width = int(video_stream.get("width", 0))
+        height = int(video_stream.get("height", 0))
+        duration = float(data.get("format", {}).get("duration", 0))
+
+        return {
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "is_horizontal": width > height
+        }
     except Exception as e:
         logger.error(f"Failed to get video info for {video_path}: {e}")
         return {"duration": 0, "width": 0, "height": 0, "is_horizontal": False}
 
 
-def _blur_image(image_array, radius=15, darken_factor=0.6):
-    """Blurs and darkens an image array using Pillow."""
-    pil_im = Image.fromarray(image_array)
-    pil_im = pil_im.filter(ImageFilter.GaussianBlur(radius=radius))
-    # Darken for better contrast with foreground
-    pil_im = pil_im.point(lambda p: p * darken_factor)
-    return np.array(pil_im)
-
-
 def pad_video_for_shorts(video_path: str) -> str:
     """
     Pads a horizontal video to 9:16 vertical format using a blurred background.
+    Uses ffmpeg directly (streams frames, no RAM bloat).
     Returns the path to the newly processed video.
     """
     output_path = video_path.rsplit('.', 1)[0] + "_padded.mp4"
     logger.info(f"Padding horizontal video {video_path} to vertical Shorts format...")
-    
+
     try:
-        clip = VideoFileClip(video_path)
-        target_w, target_h = 1080, 1920
-        
-        # 1. Foreground (original video resized to fit width 1080)
-        fg_clip = clip.resize(width=target_w)
-        
-        # 2. Background (resize to fill 1920 height, then crop width to 1080)
-        bg_clip = clip.resize(height=target_h)
-        x_center = bg_clip.w / 2
-        bg_clip = bg_clip.crop(x1=x_center - target_w/2, width=target_w)
-        
-        # Apply blur to each frame
-        bg_clip = bg_clip.fl_image(lambda frame: _blur_image(frame))
-        
-        # 3. Composite them together
-        final_clip = CompositeVideoClip([bg_clip, fg_clip.set_position("center")])
-        
-        # Write file with aac audio to ensure compatibility
-        final_clip.write_videofile(
-            output_path, 
-            codec="libx264", 
-            audio_codec="aac",
-            logger=None # Suppress moviepy terminal spam
+        # ffmpeg filter:
+        #   [bg] = scale to fill 1080x1920, crop to 1080x1920, blur + darken
+        #   [fg] = scale to fit within 1080 width, maintain aspect ratio
+        #   overlay [fg] centered on [bg]
+        filter_complex = (
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "gblur=sigma=15,"
+            "eq=brightness=-0.15[bg];"
+            "[0:v]scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2"
         )
-        
-        clip.close()
-        fg_clip.close()
-        bg_clip.close()
-        final_clip.close()
-        
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-filter_complex", filter_complex,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=300
+        )
+
+        if result.returncode != 0:
+            logger.error(f"ffmpeg padding failed: {result.stderr[-500:]}")
+            return video_path
+
         logger.info(f"Successfully processed video into {output_path}")
         return output_path
-        
+
+    except subprocess.TimeoutExpired:
+        logger.error(f"ffmpeg padding timed out for {video_path}")
+        return video_path
     except Exception as e:
         logger.error(f"Failed to pad video: {e}")
-        # If processing fails, fallback to returning original path
         return video_path
