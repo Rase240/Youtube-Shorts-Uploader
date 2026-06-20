@@ -94,6 +94,14 @@ class YouTubeShortMetadata(BaseModel):
             "and describe any text/graphics that should be overlaid to maximize CTR."
         )
     )
+    pinned_comment_suggestion: str = Field(
+        ...,
+        description=(
+            "A highly engaging question or controversial statement to pin in the comments section. "
+            "This must force viewers to reply. Examples: 'Would you have reacted the same way?' or "
+            "'Who do you think was in the wrong here?' Keep it short and conversational."
+        )
+    )
 
     @field_validator("title")
     @classmethod
@@ -159,6 +167,7 @@ Strict Constraints for Titles & Descriptions:
 - TITLES MUST BE EXTREMELY CLICKABLE. Use strong curiosity gaps (e.g., "I tried...", "Why you shouldn't..."), extreme outcomes, or highly relatable scenarios. NO boring literal descriptions.
 - NEVER use generic AI buzzwords: 'unleash', 'dive in', 'delve', 'testament', 'ultimate guide', 'revolutionize', 'look no further', 'mastering', 'epic'.
 - HASHTAGS MUST BE NICHE-SPECIFIC. Do not use generic tags like #viral, #funnymemes, #trending, #shorts. Use exact entities (e.g., #Woodworking, #GoldenRetriever).
+- PINNED COMMENT: Must be a provocative, relatable, or highly opinionated question that forces viewers to type a reply.
 - Title length: Keep it under 55 characters to avoid mobile truncation.
 - Tone: Write exactly how a real native Shorts creator would talk. NO formal greetings or meta-commentary (e.g., "Check out this video!").
 - Formatting: Use natural pacing. Emojis are okay but don't overdo them. Lowercase is great if it fits the Gen-Z aesthetic.
