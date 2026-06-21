@@ -111,6 +111,7 @@ async def handle_upload(args):
                 os.remove(video_path)
             sys.exit(1)
 
+    from scheduler import Job, process_job
     job = Job(
         vibe=args.vibe,
         drive_url=args.drive_url,
