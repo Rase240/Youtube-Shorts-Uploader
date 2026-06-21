@@ -5,8 +5,6 @@ import uuid
 import os
 import json
 import sys
-from scheduler import Job, run_batch, process_job
-
 async def handle_get_auth_url(args):
     from auth import get_authorization_url
     print(get_authorization_url())
