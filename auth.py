@@ -1,5 +1,6 @@
 import os
 import pickle
+import json
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -53,6 +54,12 @@ def get_authorization_url():
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_PATH, SCOPES)
     flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
     auth_url, _ = flow.authorization_url(prompt='consent')
+    
+    # Save the code verifier state for PKCE
+    state_file = os.path.join(_PROJECT_DIR, "oauth_state.json")
+    with open(state_file, "w") as f:
+        json.dump({"code_verifier": getattr(flow, 'code_verifier', None)}, f)
+        
     return auth_url
 
 def get_credentials_from_code(code, token_file):
@@ -61,6 +68,16 @@ def get_credentials_from_code(code, token_file):
     """
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_PATH, SCOPES)
     flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
+    
+    # Load the code verifier state for PKCE
+    state_file = os.path.join(_PROJECT_DIR, "oauth_state.json")
+    if os.path.exists(state_file):
+        with open(state_file, "r") as f:
+            data = json.load(f)
+            if data.get("code_verifier"):
+                flow.code_verifier = data["code_verifier"]
+        os.remove(state_file)
+        
     flow.fetch_token(code=code)
     creds = flow.credentials
     

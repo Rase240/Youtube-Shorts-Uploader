@@ -2,6 +2,7 @@
 .env
 token*.pickle
 accounts.json
+oauth_state.json
 client_secrets.json
 
 # Media & Temp
