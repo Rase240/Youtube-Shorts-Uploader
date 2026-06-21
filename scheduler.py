@@ -132,10 +132,10 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
                 logger.info(f"[CLEANUP] Deleted temporary file {active_video_path}")
 
 
-async def run_batch(jobs: list[Job], max_concurrent: int = 2) -> list[str]:
+async def run_batch(jobs: list[Job], max_concurrent: int = 1) -> list[str]:
     """
     Upload multiple videos concurrently.
-    max_concurrent=2 keeps you safely within YouTube's daily quota.
+    max_concurrent=1 keeps you safely within YouTube's and Gemini's free tier quotas.
     """
     semaphore = asyncio.Semaphore(max_concurrent)
     tasks = [process_job(job, semaphore) for job in jobs]

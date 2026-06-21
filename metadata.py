@@ -217,9 +217,11 @@ async def _call_gemini(client, model: str, contents, schema, max_tokens: int, te
             else:
                 logger.warning(f"[GEMINI] Empty response from {model} on attempt {attempt + 1}/{max_attempts}.")
         except APIError as e:
-            if "UNAVAILABLE" in str(e).upper() and attempt < max_attempts - 1:
-                logger.warning(f"[GEMINI] {model} unavailable, retrying in 5s ({attempt + 1}/{max_attempts})...")
-                await asyncio.sleep(5)
+            error_str = str(e).upper()
+            if ("UNAVAILABLE" in error_str or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str) and attempt < max_attempts - 1:
+                wait_time = 15 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str else 5
+                logger.warning(f"[GEMINI] {model} rate-limited/unavailable, retrying in {wait_time}s ({attempt + 1}/{max_attempts})...")
+                await asyncio.sleep(wait_time)
             else:
                 raise
         except json.JSONDecodeError as je:
