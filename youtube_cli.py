@@ -62,6 +62,37 @@ async def handle_whoami(args):
     name = get_account_name(args.acc)
     print(json.dumps({"channel_name": name}))
 
+async def handle_sync_acc(args):
+    from googleapiclient.discovery import build
+    from auth import get_credentials
+    from account_manager import load_accounts, save_accounts
+    try:
+        data = load_accounts()
+        target_id = str(args.acc_id) if getattr(args, 'acc_id', None) else str(data.get("current_account"))
+        if target_id not in data.get("accounts", {}):
+            print("ERROR: Account not found.", file=sys.stderr)
+            sys.exit(1)
+            
+        token_file = data["accounts"][target_id]["token_file"]
+        _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+        token_path = os.path.join(_PROJECT_DIR, token_file)
+        
+        creds = get_credentials(token_path)
+        youtube = build("youtube", "v3", credentials=creds)
+        res = youtube.channels().list(mine=True, part="snippet").execute()
+        items = res.get("items", [])
+        if items:
+            channel_name = items[0]["snippet"]["title"]
+            data["accounts"][target_id]["channel_name"] = channel_name
+            save_accounts(data)
+            print(f"SUCCESS: {channel_name} (ID: {target_id})")
+        else:
+            print("ERROR: Could not fetch channel name.", file=sys.stderr)
+            sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
 async def handle_upload(args):
     video_path = None
     if args.discord_url:
@@ -260,6 +291,9 @@ async def main():
     set_acc_parser = subparsers.add_parser("set_acc", help="Set current account")
     set_acc_parser.add_argument('--acc_id', required=True, help="Account ID to set as current")
     subparsers.add_parser("whoami", help="Get current account name")
+    
+    sync_acc_parser = subparsers.add_parser("sync_acc", help="Sync/Update channel name from YouTube API")
+    sync_acc_parser.add_argument('--acc_id', required=False, help="Account ID to sync (defaults to current)")
 
     args = parser.parse_args()
 
@@ -281,6 +315,8 @@ async def main():
         await handle_set_acc(args)
     elif args.command == "whoami":
         await handle_whoami(args)
+    elif args.command == "sync_acc":
+        await handle_sync_acc(args)
 
 if __name__ == '__main__':
     asyncio.run(main())
