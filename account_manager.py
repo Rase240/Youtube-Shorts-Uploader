@@ -16,14 +16,22 @@ def load_accounts():
         return {"current_account": None, "accounts": {}}
 
 def save_accounts(data):
-    with open(ACCOUNTS_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    tmp = ACCOUNTS_FILE + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp, ACCOUNTS_FILE)
+    except Exception as e:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise e
 
 def migrate_legacy_token():
     data = load_accounts()
     
     if os.path.exists(LEGACY_TOKEN):
-        if not data["accounts"]:
+        if not data.get("accounts"):
+            data["accounts"] = {}
             # Move legacy token to token_1.pickle
             new_token_name = "token_1.pickle"
             shutil.move(LEGACY_TOKEN, os.path.join(_PROJECT_DIR, new_token_name))
@@ -43,11 +51,21 @@ def get_current_account_id():
     return data.get("current_account")
 
 def set_current_account(acc_id):
+    migrate_legacy_token()
     data = load_accounts()
     if str(acc_id) not in data.get("accounts", {}):
         raise ValueError(f"Account ID {acc_id} does not exist.")
     data["current_account"] = str(acc_id)
     save_accounts(data)
+
+def remove_account(acc_id):
+    data = load_accounts()
+    acc_id_str = str(acc_id)
+    if acc_id_str in data.get("accounts", {}):
+        del data["accounts"][acc_id_str]
+        if data.get("current_account") == acc_id_str:
+            data["current_account"] = next(iter(data["accounts"])) if data["accounts"] else None
+        save_accounts(data)
 
 def add_account(channel_name, new_token_file=None):
     migrate_legacy_token()
@@ -98,6 +116,7 @@ def get_token_file_for_account(acc_id=None):
     return os.path.join(_PROJECT_DIR, acc["token_file"])
 
 def get_account_name(acc_id=None):
+    migrate_legacy_token()
     data = load_accounts()
     if acc_id is None:
         acc_id = data.get("current_account")

@@ -33,7 +33,8 @@ def _blocking_download(drive_url: str, output_path: str) -> bool:
         logger.info(f"[DRIVE] Downloading {file_id}...")
 
         # First request — may get a virus scan warning page for large files
-        response = session.get(download_url, stream=True)
+        response = session.get(download_url, stream=True, timeout=30)
+        response.raise_for_status()
 
         # Check for the "confirm download" token (large file warning)
         if "text/html" in response.headers.get("Content-Type", ""):
@@ -46,7 +47,13 @@ def _blocking_download(drive_url: str, output_path: str) -> bool:
 
             if confirm_token:
                 download_url = f"{download_url}&confirm={confirm_token}"
-                response = session.get(download_url, stream=True)
+                response = session.get(download_url, stream=True, timeout=30)
+                response.raise_for_status()
+                
+                # Double-check that we didn't receive another HTML page after confirmation
+                if "text/html" in response.headers.get("Content-Type", ""):
+                    logger.error("[DRIVE] Still got HTML warning page after sending confirm token. File might be restricted or require sign-in.")
+                    return False
             else:
                 logger.error("[DRIVE] Received HTML page but no download_warning cookie found. File might be restricted or require sign-in.")
                 return False
@@ -65,6 +72,11 @@ def _blocking_download(drive_url: str, output_path: str) -> bool:
 
     except Exception as e:
         logger.error(f"[DRIVE] Download failed: {e}")
+        if os.path.exists(abs_output):
+            try:
+                os.remove(abs_output)
+            except Exception as cleanup_err:
+                logger.warning(f"[DRIVE] Failed to clean up partial file {abs_output}: {cleanup_err}")
         return False
 
 

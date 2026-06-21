@@ -11,11 +11,12 @@ async def handle_get_auth_url(args):
 
 async def handle_auth_with_code(args):
     from auth import get_credentials_from_code
-    from account_manager import add_account
+    from account_manager import add_account, remove_account
     
     import uuid
     import shutil
-    tmp_token = f"token_tmp_{uuid.uuid4().hex[:8]}.pickle"
+    _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+    tmp_token = os.path.join(_PROJECT_DIR, f"token_tmp_{uuid.uuid4().hex[:8]}.pickle")
     try:
         get_credentials_from_code(args.code, tmp_token)
         # Fetch channel name
@@ -31,8 +32,12 @@ async def handle_auth_with_code(args):
             channel_name = "Unknown Channel"
             
         acc_id, new_token_file = add_account(channel_name)
-        _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-        shutil.move(tmp_token, os.path.join(_PROJECT_DIR, new_token_file))
+        try:
+            shutil.move(tmp_token, os.path.join(_PROJECT_DIR, new_token_file))
+        except Exception as move_err:
+            remove_account(acc_id)
+            raise Exception(f"Failed to move token file, account creation rolled back: {move_err}")
+            
         print(f"SUCCESS: {channel_name} (ID: {acc_id})")
     except Exception as e:
         if os.path.exists(tmp_token):
@@ -63,7 +68,7 @@ async def handle_whoami(args):
 async def handle_sync_acc(args):
     from googleapiclient.discovery import build
     from auth import get_credentials
-    from account_manager import load_accounts, save_accounts
+    from account_manager import load_accounts, update_account_name
     try:
         data = load_accounts()
         target_id = str(args.acc_id) if getattr(args, 'acc_id', None) else str(data.get("current_account"))
@@ -81,8 +86,7 @@ async def handle_sync_acc(args):
         items = res.get("items", [])
         if items:
             channel_name = items[0]["snippet"]["title"]
-            data["accounts"][target_id]["channel_name"] = channel_name
-            save_accounts(data)
+            update_account_name(target_id, channel_name)
             print(f"SUCCESS: {channel_name} (ID: {target_id})")
         else:
             print("ERROR: Could not fetch channel name.", file=sys.stderr)
@@ -98,7 +102,7 @@ async def handle_upload(args):
         video_path = f"videos/temp_discord_{uuid.uuid4().hex[:8]}.mp4"
         print(f"Downloading from Discord: {args.discord_url}", file=sys.stderr)
         try:
-            r = requests.get(args.discord_url, stream=True)
+            r = requests.get(args.discord_url, stream=True, timeout=30)
             r.raise_for_status()
             with open(video_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=1024*1024):
@@ -199,6 +203,17 @@ async def handle_list(args):
                     basic_map[vid]["comments"] = int(stats.get("commentCount", 0))
 
         videos = [basic_map[vid] for vid in video_ids if vid in basic_map]
+        
+        sort_by = getattr(args, "sort", "date")
+        if sort_by == "views":
+            videos.sort(key=lambda x: x["views"], reverse=True)
+        elif sort_by == "likes":
+            videos.sort(key=lambda x: x["likes"], reverse=True)
+        elif sort_by == "comments":
+            videos.sort(key=lambda x: x["comments"], reverse=True)
+        else:
+            videos.sort(key=lambda x: x["publishedAt"] or "", reverse=True)
+            
         return videos
 
     try:
@@ -256,30 +271,32 @@ async def handle_delete(args):
         sys.exit(1)
 
 async def main():
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument('--acc', required=False, help="Account ID to use")
+
     parser = argparse.ArgumentParser(description="CLI for managing YouTube videos and uploads")
-    parser.add_argument('--acc', required=False, help="Account ID to use")
     subparsers = parser.add_subparsers(dest="command", required=True, help="Subcommands")
 
     # upload subcommand
-    upload_parser = subparsers.add_parser("upload", help="Upload a video")
+    upload_parser = subparsers.add_parser("upload", parents=[common], help="Upload a video")
     upload_parser.add_argument('--vibe', required=True, help="The vibe of the video")
     upload_parser.add_argument('--drive_url', required=False, help="Google Drive link")
     upload_parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
     upload_parser.add_argument('--genre', default='comedy', help="Genre for YouTube category")
-    upload_parser.add_argument('--privacy', default='public', help="Privacy status")
+    upload_parser.add_argument('--privacy', default='public', choices=['public', 'private', 'unlisted'], help="Privacy status")
     upload_parser.add_argument('--force_normal', action='store_true', help="Force upload as normal video without padding")
 
     # list subcommand
-    list_parser = subparsers.add_parser("list", help="List uploaded videos")
+    list_parser = subparsers.add_parser("list", parents=[common], help="List uploaded videos")
     list_parser.add_argument('--sort', default='date', choices=['date', 'views', 'likes', 'comments'], help="Sort order for video list")
 
     # setprivacy subcommand
-    setprivacy_parser = subparsers.add_parser("setprivacy", help="Set privacy status of a video")
+    setprivacy_parser = subparsers.add_parser("setprivacy", parents=[common], help="Set privacy status of a video")
     setprivacy_parser.add_argument('--video_id', required=True, help="YouTube video ID")
     setprivacy_parser.add_argument('--privacy', required=True, choices=['public', 'private', 'unlisted'], help="Privacy status")
 
     # delete subcommand
-    delete_parser = subparsers.add_parser("delete", help="Delete a video")
+    delete_parser = subparsers.add_parser("delete", parents=[common], help="Delete a video")
     delete_parser.add_argument('--video_id', required=True, help="YouTube video ID")
 
     # multiple accounts subcommands
@@ -289,7 +306,7 @@ async def main():
     subparsers.add_parser("acc_list", help="List all accounts")
     set_acc_parser = subparsers.add_parser("set_acc", help="Set current account")
     set_acc_parser.add_argument('--acc_id', required=True, help="Account ID to set as current")
-    subparsers.add_parser("whoami", help="Get current account name")
+    subparsers.add_parser("whoami", parents=[common], help="Get current account name")
     
     sync_acc_parser = subparsers.add_parser("sync_acc", help="Sync/Update channel name from YouTube API")
     sync_acc_parser.add_argument('--acc_id', required=False, help="Account ID to sync (defaults to current)")
@@ -297,6 +314,8 @@ async def main():
     args = parser.parse_args()
 
     if args.command == "upload":
+        if args.drive_url and args.discord_url:
+            parser.error("Cannot specify both --drive_url and --discord_url")
         await handle_upload(args)
     elif args.command == "list":
         await handle_list(args)

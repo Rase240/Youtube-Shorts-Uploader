@@ -382,7 +382,7 @@ HALL OF SHAME (NEVER write titles like these):
                             schema=TitleCandidates,
                             max_tokens=2000,
                             temperature=1.0,
-                            max_attempts=3,  # Let _call_gemini handle 429 backoff
+                            max_attempts=3,  # Let _call_gemini handle API backoffs transparently
                         )
                         if title_data:
                             candidate = title_data.get("best_title", "")
