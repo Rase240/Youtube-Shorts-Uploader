@@ -14,6 +14,7 @@ _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_PROJECT_DIR, ".env"))
 
 from auth import get_credentials
+from account_manager import get_token_file_for_account
 
 DEFAULT_PRIVACY = os.getenv("DEFAULT_PRIVACY", "public")
 
@@ -42,6 +43,7 @@ class UploadConfig(BaseModel):
     genre: str = "default"
     default_privacy: str = DEFAULT_PRIVACY
     made_for_kids: bool = False
+    acc_id: Optional[str] = None
 
     @property
     def category_id(self) -> str:
@@ -49,8 +51,11 @@ class UploadConfig(BaseModel):
         return GENRE_CATEGORY_MAP.get(key, GENRE_CATEGORY_MAP["default"])
 
 
-def get_youtube_client():
-    creds = get_credentials()
+def get_youtube_client(acc_id=None):
+    token_file = get_token_file_for_account(acc_id)
+    if not token_file:
+        raise ValueError("No authenticated YouTube account found.")
+    creds = get_credentials(token_file)
     return build("youtube", "v3", credentials=creds)
 
 
@@ -60,7 +65,7 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
     Returns video ID on success, None on failure.
     """
     def _blocking_upload():
-        youtube = get_youtube_client()
+        youtube = get_youtube_client(config.acc_id)
 
         body = {
             "snippet": {

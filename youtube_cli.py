@@ -7,6 +7,61 @@ import json
 import sys
 from scheduler import Job, run_batch, process_job
 
+async def handle_get_auth_url(args):
+    from auth import get_authorization_url
+    print(get_authorization_url())
+
+async def handle_auth_with_code(args):
+    from auth import get_credentials_from_code
+    from account_manager import add_account
+    
+    import uuid
+    import shutil
+    tmp_token = f"token_tmp_{uuid.uuid4().hex[:8]}.pickle"
+    try:
+        get_credentials_from_code(args.code, tmp_token)
+        # Fetch channel name
+        from googleapiclient.discovery import build
+        from auth import get_credentials
+        creds = get_credentials(tmp_token)
+        youtube = build("youtube", "v3", credentials=creds)
+        res = youtube.channels().list(mine=True, part="snippet").execute()
+        items = res.get("items", [])
+        if items:
+            channel_name = items[0]["snippet"]["title"]
+        else:
+            channel_name = "Unknown Channel"
+            
+        acc_id, new_token_file = add_account(channel_name)
+        _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+        shutil.move(tmp_token, os.path.join(_PROJECT_DIR, new_token_file))
+        print(f"SUCCESS: {channel_name} (ID: {acc_id})")
+    except Exception as e:
+        if os.path.exists(tmp_token):
+            os.remove(tmp_token)
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+async def handle_acc_list(args):
+    from account_manager import load_accounts, migrate_legacy_token
+    migrate_legacy_token()
+    data = load_accounts()
+    print(json.dumps(data))
+
+async def handle_set_acc(args):
+    from account_manager import set_current_account
+    try:
+        set_current_account(args.acc_id)
+        print("SUCCESS")
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+async def handle_whoami(args):
+    from account_manager import get_account_name
+    name = get_account_name(args.acc)
+    print(json.dumps({"channel_name": name}))
+
 async def handle_upload(args):
     video_path = None
     if args.discord_url:
@@ -33,14 +88,17 @@ async def handle_upload(args):
         video_path=video_path,
         genre=args.genre,
         default_privacy=args.privacy,
-        force_normal=args.force_normal
+        force_normal=args.force_normal,
+        acc_id=args.acc
     )
     
     try:
         semaphore = asyncio.Semaphore(1)
         video_id = await process_job(job, semaphore)
+        from account_manager import get_account_name
+        channel_name = get_account_name(args.acc)
         if video_id:
-            print(f"SUCCESS: {video_id}")
+            print(f"SUCCESS: [{channel_name}] {video_id}")
         else:
             print("FAILED: Job completed but returned no video ID.", file=sys.stderr)
             sys.exit(1)
@@ -57,7 +115,7 @@ async def handle_list(args):
     loop = asyncio.get_event_loop()
     
     def _blocking_list():
-        youtube = get_youtube_client()
+        youtube = get_youtube_client(args.acc)
         channels_response = youtube.channels().list(
             mine=True,
             part="contentDetails"
@@ -114,8 +172,10 @@ async def handle_list(args):
         return videos
 
     try:
+        from account_manager import get_account_name
+        channel_name = get_account_name(args.acc)
         videos = await loop.run_in_executor(None, _blocking_list)
-        print(json.dumps({"status": "success", "videos": videos}))
+        print(json.dumps({"status": "success", "channel_name": channel_name, "videos": videos}))
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
@@ -125,7 +185,7 @@ async def handle_setprivacy(args):
     loop = asyncio.get_event_loop()
     
     def _blocking_set_privacy():
-        youtube = get_youtube_client()
+        youtube = get_youtube_client(args.acc)
         body = {
             "id": args.video_id,
             "status": {
@@ -140,7 +200,9 @@ async def handle_setprivacy(args):
 
     try:
         res_id = await loop.run_in_executor(None, _blocking_set_privacy)
-        print(f"SUCCESS: {res_id}")
+        from account_manager import get_account_name
+        channel_name = get_account_name(args.acc)
+        print(f"SUCCESS: [{channel_name}] {res_id}")
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
@@ -150,19 +212,22 @@ async def handle_delete(args):
     loop = asyncio.get_event_loop()
     
     def _blocking_delete():
-        youtube = get_youtube_client()
+        youtube = get_youtube_client(args.acc)
         youtube.videos().delete(id=args.video_id).execute()
         return True
 
     try:
         await loop.run_in_executor(None, _blocking_delete)
-        print("SUCCESS")
+        from account_manager import get_account_name
+        channel_name = get_account_name(args.acc)
+        print(f"SUCCESS: [{channel_name}]")
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
 async def main():
     parser = argparse.ArgumentParser(description="CLI for managing YouTube videos and uploads")
+    parser.add_argument('--acc', required=False, help="Account ID to use")
     subparsers = parser.add_subparsers(dest="command", required=True, help="Subcommands")
 
     # upload subcommand
@@ -187,6 +252,15 @@ async def main():
     delete_parser = subparsers.add_parser("delete", help="Delete a video")
     delete_parser.add_argument('--video_id', required=True, help="YouTube video ID")
 
+    # multiple accounts subcommands
+    subparsers.add_parser("get_auth_url", help="Get OAuth authorization URL")
+    auth_with_code_parser = subparsers.add_parser("auth_with_code", help="Complete OAuth with code")
+    auth_with_code_parser.add_argument('--code', required=True, help="Authorization code")
+    subparsers.add_parser("acc_list", help="List all accounts")
+    set_acc_parser = subparsers.add_parser("set_acc", help="Set current account")
+    set_acc_parser.add_argument('--acc_id', required=True, help="Account ID to set as current")
+    subparsers.add_parser("whoami", help="Get current account name")
+
     args = parser.parse_args()
 
     if args.command == "upload":
@@ -197,6 +271,16 @@ async def main():
         await handle_setprivacy(args)
     elif args.command == "delete":
         await handle_delete(args)
+    elif args.command == "get_auth_url":
+        await handle_get_auth_url(args)
+    elif args.command == "auth_with_code":
+        await handle_auth_with_code(args)
+    elif args.command == "acc_list":
+        await handle_acc_list(args)
+    elif args.command == "set_acc":
+        await handle_set_acc(args)
+    elif args.command == "whoami":
+        await handle_whoami(args)
 
 if __name__ == '__main__':
     asyncio.run(main())

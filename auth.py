@@ -19,15 +19,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube",
 ]
 
-def get_credentials():
+def get_credentials(token_file=None):
     """
     Handles Google OAuth flow and returns the credentials.
-    Caches the credentials in token.pickle inside the project directory.
+    Reads from the specified token_file.
     """
     creds = None
 
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, "rb") as f:
+    if token_file and os.path.exists(token_file):
+        with open(token_file, "rb") as f:
             creds = pickle.load(f)
 
     # Force re-authentication if cached credentials do not contain all required scopes
@@ -38,12 +38,33 @@ def get_credentials():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            if token_file:
+                with open(token_file, "wb") as f:
+                    pickle.dump(creds, f)
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                CLIENT_SECRETS_PATH, SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        with open(TOKEN_PATH, "wb") as f:
-            pickle.dump(creds, f)
+            raise Exception("Credentials invalid or not found. Please authenticate first using oauth.")
 
+    return creds
+
+def get_authorization_url():
+    """
+    Returns the Google OAuth authorization URL for out-of-band flow.
+    """
+    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_PATH, SCOPES)
+    flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
+    auth_url, _ = flow.authorization_url(prompt='consent')
+    return auth_url
+
+def get_credentials_from_code(code, token_file):
+    """
+    Exchanges the authorization code for credentials and saves it to token_file.
+    """
+    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_PATH, SCOPES)
+    flow.redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    
+    with open(token_file, "wb") as f:
+        pickle.dump(creds, f)
+        
     return creds

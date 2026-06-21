@@ -30,6 +30,7 @@ class Job:
     genre: str = "default"
     default_privacy: str = DEFAULT_PRIVACY
     force_normal: bool = False
+    acc_id: Optional[str] = None
 
     def __post_init__(self):
         from uploader import GENRE_CATEGORY_MAP
@@ -115,6 +116,7 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
             tags=metadata["tags"],
             genre=job.genre,
             default_privacy=job.default_privacy,
+            acc_id=job.acc_id,
         )
 
         try:

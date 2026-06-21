@@ -1,6 +1,7 @@
 # Environment & Secrets
 .env
-token.pickle
+token*.pickle
+accounts.json
 client_secrets.json
 
 # Media & Temp
