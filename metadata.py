@@ -109,7 +109,14 @@ class TitleCandidates(BaseModel):
     @field_validator("best_title")
     @classmethod
     def cap_title(cls, v: str) -> str:
-        return v[:52] + "..." if len(v) > 55 else v
+        if len(v) > 55:
+            truncated = v[:52]
+            # Cut at last space to avoid chopping mid-word
+            last_space = truncated.rfind(" ")
+            if last_space > 20:
+                truncated = truncated[:last_space]
+            return truncated + "..."
+        return v
 
 
 class SupportingMetadata(BaseModel):
@@ -247,6 +254,7 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
         plus analysis fields — or None on failure.
     """
     client = get_gemini_client()
+    video_file = None
 
     logger.info(f"[GEMINI] Uploading video {video_path} for processing...")
     try:
@@ -255,15 +263,19 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
         logger.info(f"[GEMINI] Uploaded. Waiting for processing to finish...")
 
         try:
-            # Poll until ACTIVE
-            while True:
-                video_file = await client.aio.files.get(name=video_file.name)
-                if video_file.state == "ACTIVE":
+            # Poll until ACTIVE (timeout after 120s to prevent infinite hang)
+            max_polls = 60  # 60 * 2s = 120 seconds max
+            for poll_attempt in range(max_polls):
+                video_file_info = await client.aio.files.get(name=video_file.name)
+                if video_file_info.state == "ACTIVE":
                     break
-                elif video_file.state == "FAILED":
+                elif video_file_info.state == "FAILED":
                     logger.error("[GEMINI] Video processing failed on Google's end.")
                     raise RuntimeError("Video processing failed on Google's end.")
                 await asyncio.sleep(2)
+            else:
+                logger.error(f"[GEMINI] Video processing timed out after {max_polls * 2}s (state: {video_file_info.state})")
+                raise RuntimeError(f"Video processing timed out after {max_polls * 2}s")
 
             logger.info("[GEMINI] Video ready. Starting 3-phase metadata pipeline...")
 
@@ -357,7 +369,7 @@ HALL OF SHAME (NEVER write titles like these):
                             schema=TitleCandidates,
                             max_tokens=2000,
                             temperature=1.0,
-                            max_attempts=1,
+                            max_attempts=3,  # Let _call_gemini handle 429 backoff
                         )
                         if title_data:
                             candidate = title_data.get("best_title", "")
@@ -378,7 +390,9 @@ HALL OF SHAME (NEVER write titles like these):
                                 logger.info(f"[PHASE 2] Reasoning: {title_data.get('ranking_reasoning', 'N/A')}")
                                 break
                     except Exception as e:
-                        logger.warning(f"[PHASE 2] {model} attempt {attempt + 1} failed: {e}")
+                        # If we reach here, _call_gemini exhausted its 3 attempts
+                        logger.warning(f"[PHASE 2] {model} API completely failed: {e}")
+                        break # Stop trying to generate titles with this model and fall back to flash
                 if best_title:
                     break
 
@@ -455,8 +469,12 @@ THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
 
         finally:
             # Clean up the uploaded file to save quota
-            logger.info("[GEMINI] Deleting video from Google's servers...")
-            await client.aio.files.delete(name=video_file.name)
+            if video_file:
+                try:
+                    logger.info("[GEMINI] Deleting video from Google's servers...")
+                    await client.aio.files.delete(name=video_file.name)
+                except Exception as cleanup_err:
+                    logger.warning(f"[GEMINI] Failed to delete uploaded video (non-fatal): {cleanup_err}")
 
     except APIError as e:
         logger.error(f"Gemini API error: {e}")
