@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_PROJECT_DIR, ".env"))
@@ -178,6 +178,9 @@ def _check_title_quality(title: str) -> Optional[str]:
     if not title or len(title.strip()) < 10:
         return f"Title too short ({len(title.strip())} chars)"
 
+    if len(title.strip()) > 55:
+        return f"Title too long ({len(title.strip())} chars)"
+
     title_lower = title.lower()
     for banned in _BANNED_TITLE_WORDS:
         if banned in title_lower:
@@ -220,9 +223,13 @@ async def _call_gemini(client, model: str, contents, schema, max_tokens: int, te
                 if text.endswith("```"):
                     text = text[:-3]
                 text = text.strip()
-                return json.loads(text)
+                parsed = json.loads(text)
+                validated = schema.model_validate(parsed)
+                return validated.model_dump()
             else:
                 logger.warning(f"[GEMINI] Empty response from {model} on attempt {attempt + 1}/{max_attempts}.")
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(2)
         except APIError as e:
             error_str = str(e).upper()
             if ("UNAVAILABLE" in error_str or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str) and attempt < max_attempts - 1:
@@ -231,18 +238,24 @@ async def _call_gemini(client, model: str, contents, schema, max_tokens: int, te
                 await asyncio.sleep(wait_time)
             else:
                 raise
-        except json.JSONDecodeError as je:
-            logger.warning(f"[GEMINI] JSON parse failed on attempt {attempt + 1}/{max_attempts}: {je}")
+        except (json.JSONDecodeError, ValidationError) as je:
+            logger.warning(f"[GEMINI] Validation or JSON parse failed on attempt {attempt + 1}/{max_attempts}: {je}")
             if attempt >= max_attempts - 1:
                 raise
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.warning(f"[GEMINI] Unexpected error on attempt {attempt + 1}/{max_attempts}: {e}")
+            if attempt >= max_attempts - 1:
+                raise
+            await asyncio.sleep(2)
     return None
 
 
 async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
     """
     3-phase metadata generation pipeline:
-      Phase 1 (Analysis):  gemini-3.1-pro watches the video → deep analysis
-      Phase 2 (Title):     gemini-3.1-pro crafts 5 title candidates → picks best
+      Phase 1 (Analysis):  gemini-3.5-flash watches the video → deep analysis
+      Phase 2 (Title):     gemini-3.5-flash crafts 5 title candidates → picks best
       Phase 3 (Metadata):  gemini-3.5-flash generates description, tags, etc.
 
     Args:
@@ -280,7 +293,7 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
             logger.info("[GEMINI] Video ready. Starting 3-phase metadata pipeline...")
 
             # ==================== PHASE 1: VIDEO ANALYSIS ====================
-            logger.info("[PHASE 1] Analyzing video content with gemini-3.1-pro...")
+            logger.info("[PHASE 1] Analyzing video content with gemini-3.5-flash...")
 
             phase1_prompt = f"""You are an expert video content analyst. Watch this video CAREFULLY.
 
@@ -318,7 +331,7 @@ Be specific and detailed. Reference exact moments in the video."""
                 raise RuntimeError("Phase 1 (video analysis) failed on all models.")
 
             # ==================== PHASE 2: TITLE GENERATION ====================
-            logger.info("[PHASE 2] Generating title candidates with gemini-3.1-pro...")
+            logger.info("[PHASE 2] Generating title candidates with gemini-3.5-flash...")
 
             phase2_prompt = f"""You are the #1 YouTube Shorts title strategist. You've generated 50+ viral titles with 10M+ views each.
 
