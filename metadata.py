@@ -205,7 +205,15 @@ async def _call_gemini(client, model: str, contents, schema, max_tokens: int, te
                 ),
             )
             if response and response.text:
-                return json.loads(response.text)
+                text = response.text.strip()
+                if text.startswith("```json"):
+                    text = text[7:]
+                if text.startswith("```"):
+                    text = text[3:]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+                return json.loads(text)
             else:
                 logger.warning(f"[GEMINI] Empty response from {model} on attempt {attempt + 1}/{max_attempts}.")
         except APIError as e:
@@ -276,7 +284,7 @@ Focus on:
 Be specific and detailed. Reference exact moments in the video."""
 
             analysis = None
-            for model in ["gemini-3.1-pro", "gemini-3.5-flash"]:
+            for model in ["gemini-3.1-pro-preview", "gemini-3.5-flash"]:
                 try:
                     analysis = await _call_gemini(
                         client, model,
@@ -338,14 +346,14 @@ HALL OF SHAME (NEVER write titles like these):
 """
 
             best_title = None
-            for model in ["gemini-3.1-pro", "gemini-3.5-flash"]:
+            for model in ["gemini-3.1-pro-preview", "gemini-3.5-flash"]:
                 for attempt in range(3):
                     try:
                         title_data = await _call_gemini(
                             client, model,
                             contents=[phase2_prompt],
                             schema=TitleCandidates,
-                            max_tokens=1000,
+                            max_tokens=2000,
                             temperature=1.0,
                             max_attempts=1,
                         )
@@ -408,7 +416,7 @@ PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
 THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
 
             metadata = None
-            for model in ["gemini-3.5-flash", "gemini-3.1-pro"]:
+            for model in ["gemini-3.5-flash", "gemini-3.1-pro-preview"]:
                 try:
                     metadata = await _call_gemini(
                         client, model,
