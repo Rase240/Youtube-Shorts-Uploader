@@ -170,10 +170,10 @@ Strict Constraints for Titles & Descriptions:
 - PINNED COMMENT: Must be a provocative, relatable, or highly opinionated question that forces viewers to type a reply.
 - Title length: Keep it under 55 characters to avoid mobile truncation.
 - Tone: Write exactly how a real native Shorts creator would talk. NO formal greetings or meta-commentary (e.g., "Check out this video!").
-- Formatting: Use natural pacing. Emojis are okay but don't overdo them. Lowercase is great if it fits the Gen-Z aesthetic.
+- Formatting: Use natural pacing. Emojis are okay but do not overuse them. It is perfectly fine to use '💀' or '😭', but VARY your usage so they don't appear on every single video. Often, having no emojis at all is the most natural Gen-Z aesthetic. Lowercase is great.
 
 Example of BAD Title: "A Funny Dog Playing With A Ball #Shorts"
-Example of GOOD Title: "he actually thought this would work 💀" or "the ending was personal..."
+Example of GOOD Title: "he actually thought this would work" or "the ending was personal..."
 """
             response = None
             parsed_data = None
