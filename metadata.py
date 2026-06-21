@@ -298,7 +298,7 @@ Focus on:
 Be specific and detailed. Reference exact moments in the video."""
 
             analysis = None
-            for model in ["gemini-3.1-pro-preview", "gemini-3.5-flash"]:
+            for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
                 try:
                     analysis = await _call_gemini(
                         client, model,
@@ -360,7 +360,7 @@ HALL OF SHAME (NEVER write titles like these):
 """
 
             best_title = None
-            for model in ["gemini-3.1-pro-preview", "gemini-3.5-flash"]:
+            for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
                 for attempt in range(3):
                     try:
                         title_data = await _call_gemini(
@@ -432,7 +432,7 @@ PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
 THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
 
             metadata = None
-            for model in ["gemini-3.5-flash", "gemini-3.1-pro-preview"]:
+            for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
                 try:
                     metadata = await _call_gemini(
                         client, model,
