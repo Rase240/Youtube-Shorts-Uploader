@@ -73,6 +73,8 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
                 "description": config.description,
                 "tags": config.tags,
                 "categoryId": config.category_id,
+                "defaultLanguage": "en",
+                "defaultAudioLanguage": "en",
             },
             "status": {
                 "privacyStatus": config.default_privacy,

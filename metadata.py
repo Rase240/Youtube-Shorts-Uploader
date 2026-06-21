@@ -39,32 +39,81 @@ if not root_logger.handlers:
 logger = logging.getLogger(__name__)
 
 
-class YouTubeShortMetadata(BaseModel):
-    video_analysis: str = Field(
+
+class VideoAnalysis(BaseModel):
+    """Phase 1 output: Deep analysis of the video content."""
+    key_moment: str = Field(
         ...,
         description=(
-            "Briefly analyze the video's visual hooks, pacing, and core message. "
-            "Identify the most striking moment or conflict that will capture attention. "
-            "This is your 'scratchpad' to think before generating the metadata."
+            "Describe the single most striking, funny, shocking, or satisfying moment in the video. "
+            "Be specific — reference what happens visually and when it occurs."
         )
     )
-    target_emotion: str = Field(
-        ...,
-        description="The primary emotion the video triggers (e.g. curiosity, amusement, outrage, nostalgia, awe)."
-    )
-    hook_style: str = Field(
-        ...,
-        description="The hook technique used (e.g. 'unanswered question', 'pattern interrupt', 'relatable scenario')."
-    )
-    title: str = Field(
+    emotional_arc: str = Field(
         ...,
         description=(
-            "A hyper-engaging, attention-grabbing YouTube Shorts title under 55 characters. "
-            "Use extreme curiosity gaps, bold claims, relatable pain points, or negative hooks. "
-            "Front-load the most important keywords. Focus on the core conflict or punchline. "
-            "Avoid boring descriptive titles. Lowercase and emojis are allowed if they fit the vibe."
+            "Describe the emotional journey a viewer goes through watching this video. "
+            "What do they feel at the start vs. the climax vs. the end?"
         )
     )
+    shareability_factor: str = Field(
+        ...,
+        description=(
+            "Why would someone send this to a friend? What makes it worth sharing? "
+            "Is it relatable, shocking, funny, wholesome, or rage-inducing?"
+        )
+    )
+    core_hook: str = Field(
+        ...,
+        description=(
+            "In one sentence, what is the irresistible hook of this video? "
+            "What makes it impossible to scroll past?"
+        )
+    )
+    subject_entities: list[str] = Field(
+        ...,
+        description=(
+            "List 3-5 specific entities/subjects visible in the video "
+            "(e.g. 'golden retriever', 'skateboard', 'kitchen', 'street food vendor'). "
+            "These will be used for SEO tags later."
+        )
+    )
+
+
+class TitleCandidates(BaseModel):
+    """Phase 2 output: Multiple title options ranked by quality."""
+    candidates: list[str] = Field(
+        ...,
+        description=(
+            "Generate exactly 5 unique title candidates for this YouTube Short. "
+            "Each must be under 55 characters, lowercase Gen-Z voice, and use different hook techniques "
+            "(curiosity gap, relatable scenario, pattern interrupt, bold claim, emotional reaction). "
+            "NO emojis unless they genuinely add to the vibe — most titles work better without them."
+        )
+    )
+    ranking_reasoning: str = Field(
+        ...,
+        description=(
+            "Briefly explain why you ranked them in this order. "
+            "What makes #1 the strongest? Why are the others weaker?"
+        )
+    )
+    best_title: str = Field(
+        ...,
+        description=(
+            "The single best title from your candidates list. Copy it exactly. "
+            "This MUST be under 55 characters."
+        )
+    )
+
+    @field_validator("best_title")
+    @classmethod
+    def cap_title(cls, v: str) -> str:
+        return v[:52] + "..." if len(v) > 55 else v
+
+
+class SupportingMetadata(BaseModel):
+    """Phase 3 output: Description, tags, and engagement metadata."""
     description: str = Field(
         ...,
         description=(
@@ -72,74 +121,131 @@ class YouTubeShortMetadata(BaseModel):
             "Line 1 MUST be a hard-hitting hook or controversial question. "
             "Lines 2-3 should provide brief, natural-sounding context that weaves in SEO keywords. "
             "End with exactly 5-7 highly specific, algorithm-friendly hashtags on a single line. "
-            "CRITICAL: NEVER use generic, spammy, or cringy hashtags like #viral, #funnymemes, #trending, #fyp, or #Shorts. "
-            "Only use strictly relevant, high-search-volume niche tags (e.g., #CarRestoration, #BakingFails). "
+            "CRITICAL: NEVER use generic hashtags like #viral, #funnymemes, #trending, #fyp, #Shorts, #funny, #meme, #comedy, #lol. "
+            "Only use niche-specific entity tags (e.g., #CarRestoration, #GoldenRetriever, #StreetFood). "
             "Never use generic AI intros like 'In this video...' or 'Welcome back...'."
         )
     )
     tags: list[str] = Field(
         ...,
         description=(
-            "10-15 high-search-volume YouTube tags relevant to the video (no # symbols). "
+            "10-15 high-search-volume YouTube tags as multi-word keyword phrases (no # symbols). "
             "CRITICAL: Ban all generic tags (viral, funny, meme, trending, shorts). "
-            "Focus ONLY on strict SEO entity keywords. If the video is about a dog eating pizza, "
-            "tags should be 'golden retriever', 'dog eating human food', 'funny dog compilation', NOT 'funnymemes'."
+            "Think 'what would someone type into YouTube search to find this exact video?'. "
+            "Use specific phrases like 'dog steals pizza from table', NOT single words like 'funny'."
         )
     )
     thumbnail_recommendation: str = Field(
         ...,
         description=(
-            "A recommendation for the perfect custom thumbnail. "
-            "Suggest the exact timestamp to pull the frame from (e.g. '00:04 where the cat jumps') "
-            "and describe any text/graphics that should be overlaid to maximize CTR."
+            "Suggest the exact timestamp to pull the thumbnail frame from "
+            "(e.g. '00:04 where the cat jumps') and describe any text/graphics overlay to maximize CTR."
         )
     )
     pinned_comment_suggestion: str = Field(
         ...,
         description=(
-            "A highly engaging question or controversial statement to pin in the comments section. "
-            "This must force viewers to reply. Examples: 'Would you have reacted the same way?' or "
-            "'Who do you think was in the wrong here?' Keep it short and conversational."
+            "A highly engaging question or controversial statement to pin in the comments. "
+            "Must force viewers to reply. Keep it under 15 words and conversational."
         )
     )
-
-    @field_validator("title")
-    @classmethod
-    def cap_title(cls, v: str) -> str:
-        return v[:52] + "..." if len(v) > 55 else v
 
     @field_validator("tags")
     @classmethod
     def cap_tags(cls, v: list[str]) -> list[str]:
-        # YouTube allows up to 500 chars total for tags
         return [t.strip("#").strip() for t in v]
+
+
+# --- Title Quality Gate ---
+_BANNED_TITLE_WORDS = {
+    "unleash", "epic", "ultimate", "revolutionary", "incredible", "amazing",
+    "unbelievable", "mind-blowing", "jaw-dropping", "insane", "you won't believe",
+    "wait for it", "watch until the end", "must see", "gone wrong", "gone viral",
+    "#shorts", "subscribe", "like and subscribe", "delve", "dive in",
+    "look no further", "mastering", "testament", "revolutionize",
+}
+
+
+def _check_title_quality(title: str) -> Optional[str]:
+    """Returns a rejection reason if the title is low quality, None if it passes."""
+    if not title or len(title.strip()) < 10:
+        return f"Title too short ({len(title.strip())} chars)"
+
+    title_lower = title.lower()
+    for banned in _BANNED_TITLE_WORDS:
+        if banned in title_lower:
+            return f"Contains banned word/phrase: '{banned}'"
+
+    # Reject overly formal/capitalized titles (e.g. "A Funny Dog Playing With A Ball")
+    words = title.split()
+    if len(words) >= 4:
+        capitalized = sum(1 for w in words if w[0].isupper() and len(w) > 1)
+        if capitalized / len(words) > 0.7:
+            return "Title looks too formal/capitalized (not Gen-Z voice)"
+
+    return None
 
 
 def get_gemini_client() -> genai.Client:
     return genai.Client()
 
 
+async def _call_gemini(client, model: str, contents, schema, max_tokens: int, temperature: float, max_attempts: int = 3):
+    """Helper to call Gemini with retries and model fallback."""
+    for attempt in range(max_attempts):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                    max_output_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+            )
+            if response and response.text:
+                return json.loads(response.text)
+            else:
+                logger.warning(f"[GEMINI] Empty response from {model} on attempt {attempt + 1}/{max_attempts}.")
+        except APIError as e:
+            if "UNAVAILABLE" in str(e).upper() and attempt < max_attempts - 1:
+                logger.warning(f"[GEMINI] {model} unavailable, retrying in 5s ({attempt + 1}/{max_attempts})...")
+                await asyncio.sleep(5)
+            else:
+                raise
+        except json.JSONDecodeError as je:
+            logger.warning(f"[GEMINI] JSON parse failed on attempt {attempt + 1}/{max_attempts}: {je}")
+            if attempt >= max_attempts - 1:
+                raise
+    return None
+
+
 async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
     """
-    Generate engagement-optimised YouTube metadata by having Gemini actually watch the video.
+    3-phase metadata generation pipeline:
+      Phase 1 (Analysis):  gemini-3.1-pro watches the video → deep analysis
+      Phase 2 (Title):     gemini-3.1-pro crafts 5 title candidates → picks best
+      Phase 3 (Metadata):  gemini-3.5-flash generates description, tags, etc.
 
     Args:
         video_path: Path to the video file to upload.
         vibe:       The vibe/niche e.g. 'funny meme', 'gaming fail', 'relatable moment'.
 
     Returns:
-        Dict with keys: title, description, tags, thumbnail_recommendation — or None on failure.
+        Dict with keys: title, description, tags, thumbnail_recommendation, pinned_comment_suggestion,
+        plus analysis fields — or None on failure.
     """
     client = get_gemini_client()
 
     logger.info(f"[GEMINI] Uploading video {video_path} for processing...")
     try:
-        # 1. Upload the video
+        # Upload the video
         video_file = await client.aio.files.upload(file=video_path)
-        logger.info(f"[GEMINI] Uploaded. Waiting for processing to finish (this takes a few seconds)...")
+        logger.info(f"[GEMINI] Uploaded. Waiting for processing to finish...")
 
         try:
-            # 2. Poll until ACTIVE
+            # Poll until ACTIVE
             while True:
                 video_file = await client.aio.files.get(name=video_file.name)
                 if video_file.state == "ACTIVE":
@@ -149,85 +255,196 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
                     raise RuntimeError("Video processing failed on Google's end.")
                 await asyncio.sleep(2)
 
-            logger.info("[GEMINI] Video ready. Generating metadata...")
+            logger.info("[GEMINI] Video ready. Starting 3-phase metadata pipeline...")
 
-            # 3. Generate content
-            prompt = f"""
-You are a top-tier Gen-Z YouTube Shorts strategist and growth hacker, famous for viral hooks and massive CTRs.
-I have attached a video for you to watch.
+            # ==================== PHASE 1: VIDEO ANALYSIS ====================
+            logger.info("[PHASE 1] Analyzing video content with gemini-3.1-pro...")
 
-The intended vibe/niche is: {vibe}
+            phase1_prompt = f"""You are an expert video content analyst. Watch this video CAREFULLY.
 
-Follow these steps:
-1. ANALYZE: Watch the video carefully. Use the `video_analysis` field to break down the most satisfying, funny, or controversial moment.
-2. HOOK: Determine the `target_emotion` and `hook_style`.
-3. TITLES & METADATA: Craft metadata that absolutely forces a viewer to stop scrolling. 
+The creator says the intended vibe/niche is: {vibe}
 
-Strict Constraints for Titles & Descriptions:
-- TITLES MUST BE EXTREMELY CLICKABLE. Use strong curiosity gaps (e.g., "I tried...", "Why you shouldn't..."), extreme outcomes, or highly relatable scenarios. NO boring literal descriptions.
-- NEVER use generic AI buzzwords: 'unleash', 'dive in', 'delve', 'testament', 'ultimate guide', 'revolutionize', 'look no further', 'mastering', 'epic'.
-- HASHTAGS MUST BE NICHE-SPECIFIC. Do not use generic tags like #viral, #funnymemes, #trending, #shorts. Use exact entities (e.g., #Woodworking, #GoldenRetriever).
-- PINNED COMMENT: Must be a provocative, relatable, or highly opinionated question that forces viewers to type a reply.
-- Title length: Keep it under 55 characters to avoid mobile truncation.
-- Tone: Write exactly how a real native Shorts creator would talk. NO formal greetings or meta-commentary (e.g., "Check out this video!").
-- Formatting: Use natural pacing. Emojis are okay but do not overuse them. It is perfectly fine to use '💀' or '😭', but VARY your usage so they don't appear on every single video. Often, having no emojis at all is the most natural Gen-Z aesthetic. Lowercase is great.
+Your job is to deeply analyze this video so that a title strategist can craft the perfect viral title.
 
-Example of BAD Title: "A Funny Dog Playing With A Ball #Shorts"
-Example of GOOD Title: "he actually thought this would work" or "the ending was personal..."
+Focus on:
+- The single most striking/funny/shocking moment and WHEN it happens
+- The emotional journey a viewer goes through
+- Why someone would share this with a friend
+- The core irresistible hook
+- Specific subjects/entities visible in the video (for SEO)
+
+Be specific and detailed. Reference exact moments in the video."""
+
+            analysis = None
+            for model in ["gemini-3.1-pro", "gemini-3.5-flash"]:
+                try:
+                    analysis = await _call_gemini(
+                        client, model,
+                        contents=[video_file, phase1_prompt],
+                        schema=VideoAnalysis,
+                        max_tokens=1500,
+                        temperature=0.7,
+                    )
+                    if analysis:
+                        logger.info(f"[PHASE 1] Analysis complete. Core hook: {analysis.get('core_hook', 'N/A')}")
+                        break
+                except Exception as e:
+                    logger.warning(f"[PHASE 1] {model} failed: {e}")
+                    continue
+
+            if not analysis:
+                raise RuntimeError("Phase 1 (video analysis) failed on all models.")
+
+            # ==================== PHASE 2: TITLE GENERATION ====================
+            logger.info("[PHASE 2] Generating title candidates with gemini-3.1-pro...")
+
+            phase2_prompt = f"""You are the #1 YouTube Shorts title strategist. You've generated 50+ viral titles with 10M+ views each.
+
+Here is a detailed analysis of a video in the "{vibe}" niche:
+
+KEY MOMENT: {analysis['key_moment']}
+EMOTIONAL ARC: {analysis['emotional_arc']}
+SHAREABILITY: {analysis['shareability_factor']}
+CORE HOOK: {analysis['core_hook']}
+SUBJECTS: {', '.join(analysis['subject_entities'])}
+
+Generate 5 COMPLETELY DIFFERENT title candidates using different hook techniques.
+Then rank them and pick the absolute best one.
+
+TITLE RULES:
+- UNDER 55 characters (mobile truncation kills reach)
+- Authentic lowercase Gen-Z voice — NOT formal English
+- Front-load the hook (first 3-4 words must grab attention)
+- Create an irresistible curiosity gap or emotional reaction
+- NO emojis unless they genuinely add to the vibe (vary it — most titles work better without)
+- NEVER use dead patterns: "You won't believe...", "Wait for it...", "Watch until the end"
+- NEVER use AI slop: 'unleash', 'epic', 'ultimate', 'revolutionary', 'incredible', 'amazing', 'unbelievable', 'insane'
+
+HALL OF FAME (study these patterns):
+- "he wasn't supposed to catch that"
+- "bro thought he was safe 💀"
+- "this is why nobody invites him"
+- "the betrayal at 0:08 though"
+- "pov: you finally snapped"
+- "tell me this isn't rigged"
+- "she did NOT just say that"
+- "i can't unsee this"
+
+HALL OF SHAME (NEVER write titles like these):
+- "A Funny Dog Playing With A Ball"
+- "Amazing Moment Caught On Camera!"
+- "You Won't Believe What Happens Next"
+- "Epic Fail Caught on Camera"
 """
-            response = None
-            parsed_data = None
-            models_to_try = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
-            
-            for model_name in models_to_try:
-                success = False
+
+            best_title = None
+            for model in ["gemini-3.1-pro", "gemini-3.5-flash"]:
                 for attempt in range(3):
                     try:
-                        logger.info(f"[GEMINI] Generating metadata with {model_name} (Attempt {attempt + 1}/3)...")
-                        response = await client.aio.models.generate_content(
-                            model=model_name,
-                            contents=[video_file, prompt],
-                            config=types.GenerateContentConfig(
-                                response_mime_type="application/json",
-                                response_schema=YouTubeShortMetadata,
-                                max_output_tokens=1500,
-                            ),
+                        title_data = await _call_gemini(
+                            client, model,
+                            contents=[phase2_prompt],
+                            schema=TitleCandidates,
+                            max_tokens=1000,
+                            temperature=1.0,
+                            max_attempts=1,
                         )
-                        if response and response.text:
-                            parsed_data = json.loads(response.text)
-                            success = True
-                            break
-                        else:
-                            logger.warning(f"[GEMINI] Empty response text on {model_name} attempt {attempt + 1}/3.")
-                    except APIError as e:
-                        if "UNAVAILABLE" in str(e).upper():
-                            if attempt < 2:
-                                logger.warning(f"[GEMINI] {model_name} unavailable, retrying in 5s ({attempt + 1}/3)...")
-                                await asyncio.sleep(5)
-                            else:
-                                logger.error(f"[GEMINI] {model_name} failed after 3 attempts.")
-                        else:
-                            raise e
-                    except json.JSONDecodeError as je:
-                        logger.warning(f"[GEMINI] Failed to parse JSON on attempt {attempt + 1}/3: {je}")
-                        try:
-                            logger.warning(f"Raw response text that failed:\n{response.text}")
-                        except Exception:
-                            pass
-                        if attempt >= 2:
-                            raise je
-                
-                if success:
+                        if title_data:
+                            candidate = title_data.get("best_title", "")
+                            quality_issue = _check_title_quality(candidate)
+                            if quality_issue:
+                                logger.warning(f"[PHASE 2] Title rejected ({model}, attempt {attempt + 1}/3): {quality_issue} — '{candidate}'")
+                                # Try picking from the other candidates
+                                for alt in title_data.get("candidates", []):
+                                    if alt != candidate and not _check_title_quality(alt):
+                                        candidate = alt
+                                        quality_issue = None
+                                        logger.info(f"[PHASE 2] Using alternate candidate: '{candidate}'")
+                                        break
+                            if not quality_issue:
+                                best_title = candidate
+                                logger.info(f"[PHASE 2] Winning title: '{best_title}'")
+                                logger.info(f"[PHASE 2] All candidates: {title_data.get('candidates', [])}")
+                                logger.info(f"[PHASE 2] Reasoning: {title_data.get('ranking_reasoning', 'N/A')}")
+                                break
+                    except Exception as e:
+                        logger.warning(f"[PHASE 2] {model} attempt {attempt + 1} failed: {e}")
+                if best_title:
                     break
 
-            if parsed_data:
-                return parsed_data
-            else:
-                logger.error("Empty or failed response from Gemini after trying all models.")
-                raise RuntimeError("Empty or failed response from Gemini after trying all models.")
+            if not best_title:
+                raise RuntimeError("Phase 2 (title generation) failed to produce a quality title.")
+
+            # ==================== PHASE 3: SUPPORTING METADATA ====================
+            logger.info("[PHASE 3] Generating description, tags, and engagement metadata with gemini-3.5-flash...")
+
+            phase3_prompt = f"""You are a YouTube Shorts SEO and engagement specialist.
+
+A video in the "{vibe}" niche has been analyzed and titled. Your job is to generate the supporting metadata.
+
+VIDEO ANALYSIS:
+- Key moment: {analysis['key_moment']}
+- Core hook: {analysis['core_hook']}
+- Subjects: {', '.join(analysis['subject_entities'])}
+
+CHOSEN TITLE: "{best_title}"
+
+Generate the description, tags, thumbnail recommendation, and pinned comment that perfectly complement this title.
+
+DESCRIPTION RULES:
+- Line 1: Punchy hook or controversial statement (NEVER "In this video..." or "Welcome back")
+- Lines 2-3: Natural context with organic SEO keywords
+- Final line: 5-7 niche-specific hashtags
+- BANNED: #viral, #fyp, #trending, #shorts, #funnymemes, #funny, #meme, #memes, #comedy, #lol
+- GOOD: specific entity hashtags like #GoldenRetriever, #StreetFood, #Woodworking
+
+TAG RULES:
+- 10-15 specific multi-word search phrases
+- Think "what would someone type into YouTube search to find THIS video?"
+- Include the specific subjects: {', '.join(analysis['subject_entities'])}
+- NO generic single words
+
+PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
+THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
+
+            metadata = None
+            for model in ["gemini-3.5-flash", "gemini-3.1-pro"]:
+                try:
+                    metadata = await _call_gemini(
+                        client, model,
+                        contents=[phase3_prompt],
+                        schema=SupportingMetadata,
+                        max_tokens=1500,
+                        temperature=0.8,
+                    )
+                    if metadata:
+                        logger.info(f"[PHASE 3] Metadata complete. Tags: {metadata.get('tags', [])[:5]}...")
+                        break
+                except Exception as e:
+                    logger.warning(f"[PHASE 3] {model} failed: {e}")
+                    continue
+
+            if not metadata:
+                raise RuntimeError("Phase 3 (supporting metadata) failed on all models.")
+
+            # Combine all phases into final result
+            final_result = {
+                "title": best_title,
+                "description": metadata["description"],
+                "tags": metadata["tags"],
+                "thumbnail_recommendation": metadata["thumbnail_recommendation"],
+                "pinned_comment_suggestion": metadata["pinned_comment_suggestion"],
+                # Bonus: include analysis for logging/debugging
+                "video_analysis": analysis["key_moment"],
+                "target_emotion": analysis["emotional_arc"],
+                "hook_style": analysis["core_hook"],
+            }
+
+            logger.info(f"[DONE] 3-phase pipeline complete. Title: '{best_title}'")
+            return final_result
 
         finally:
-            # 4. Clean up the file to save quota space
+            # Clean up the uploaded file to save quota
             logger.info("[GEMINI] Deleting video from Google's servers...")
             await client.aio.files.delete(name=video_file.name)
 
@@ -236,11 +453,6 @@ Example of GOOD Title: "he actually thought this would work" or "the ending was 
         raise RuntimeError(f"Gemini API error: {e}") from e
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Gemini output as JSON: {e}")
-        try:
-            if 'response' in locals() and response and hasattr(response, 'text'):
-                logger.error(f"Raw Gemini response that failed to parse:\n{response.text}")
-        except Exception:
-            pass
         raise RuntimeError(f"Failed to parse Gemini output as JSON: {e}") from e
     except Exception as e:
         logger.error(f"Unexpected error generating metadata: {e}")
