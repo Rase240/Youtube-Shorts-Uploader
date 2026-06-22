@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import sys
 from logging.handlers import RotatingFileHandler
 from typing import Optional
@@ -201,17 +202,49 @@ class SupportingMetadata(BaseModel):
 
 
 # --- Title Quality Gate ---
+# Word bans are whack-a-mole — there's always a new slop word. Kept as a thin
+# last-resort net for the most persistent offenders, but the real filtering
+# below is at the PATTERN/BEHAVIOR level, which generalizes much better.
 _BANNED_TITLE_WORDS = {
     "unleash", "epic", "ultimate", "revolutionary", "incredible", "amazing",
-    "unbelievable", "mind-blowing", "jaw-dropping", "insane", "you won't believe",
-    "wait for it", "watch until the end", "must see", "gone wrong", "gone viral",
+    "unbelievable", "mind-blowing", "jaw-dropping", "insane",
     "#shorts", "subscribe", "like and subscribe", "delve", "dive in",
     "look no further", "mastering", "testament", "revolutionize",
 }
 
+# Narrating/explaining the video instead of just hooking the viewer is the
+# single biggest AI tell — it's the model describing the content rather than
+# dropping the viewer into it. Catching this pattern matters more than any
+# specific word.
+_NARRATING_PATTERNS = {
+    "this video shows", "in this video", "here's what happens",
+    "here is what happens", "this is the moment", "the moment when",
+    "the moment where", "when you realize", "this proves that", "this shows",
+    "and it's hilarious", "and it's amazing", "so funny", "so wholesome",
+    "so satisfying", "this will make you", "guaranteed to", "you won't believe",
+    "wait for it", "watch until the end", "must see", "gone wrong", "gone viral",
+}
+
+# If a title both sets up a scenario and resolves it with one of these, the
+# curiosity gap is gone — there's no reason left to tap. Heuristic flag, not
+# a perfect detector, but catches the common "and then X happened" failure.
+_RESOLUTION_GIVEAWAYS = {
+    "and won", "and lost", "and died", "and survived", "and failed",
+    "and succeeded", "and it worked", "and it broke", "ends with",
+    "results in", "leads to him", "leads to her",
+}
+
 
 def _check_title_quality(title: str) -> Optional[str]:
-    """Returns a rejection reason if the title is low quality, None if it passes."""
+    """Returns a rejection reason if the title is low quality, None if it passes.
+
+    Ordered by how often each failure mode actually shows up in practice:
+      1. Length / formatting
+      2. Narrating/explaining instead of hooking (the main AI tell)
+      3. Resolving the curiosity gap instead of preserving it
+      4. Leftover slop words (last-resort net)
+      5. Overly formal capitalization
+    """
     if not title or len(title.strip()) < 10:
         return f"Title too short ({len(title.strip())} chars)"
 
@@ -219,6 +252,15 @@ def _check_title_quality(title: str) -> Optional[str]:
         return f"Title too long ({len(title.strip())} chars)"
 
     title_lower = title.lower()
+
+    for pattern in _NARRATING_PATTERNS:
+        if pattern in title_lower:
+            return f"Narrates/explains instead of hooking: '{pattern}'"
+
+    for pattern in _RESOLUTION_GIVEAWAYS:
+        if pattern in title_lower:
+            return f"Gives away the resolution, kills the curiosity gap: '{pattern}'"
+
     for banned in _BANNED_TITLE_WORDS:
         if banned in title_lower:
             return f"Contains banned word/phrase: '{banned}'"
@@ -434,44 +476,61 @@ Be specific and detailed. Reference exact moments in the video."""
             # ==================== PHASE 2: TITLE GENERATION ====================
             logger.info("[PHASE 2] Generating title candidates with gemini-3.5-flash...")
 
-            phase2_prompt = f"""You are the #1 YouTube Shorts title strategist. You've generated 50+ viral titles with 10M+ views each.
+            # Pull 5 random techniques from a larger pool each call. This forces the
+            # model to actually apply a *method* to THIS video's content instead of
+            # reaching for memorized example phrasings (which is what happens when a
+            # prompt includes literal sample titles — models anchor on them hard and
+            # you get the same 3 title shapes forever, just with nouns swapped).
+            _ALL_TECHNIQUES = [
+                "curiosity gap: name the setup, withhold the outcome entirely",
+                "accusation/callout: address someone in the video directly, as if catching them",
+                "understatement: describe something huge as if it's no big deal",
+                "overheard fragment: write it like a text message sent mid-reaction, not a headline",
+                "specific detail anchor: lead with one hyper-specific visual detail, not the general topic",
+                "false confidence: state something the viewer will immediately want to argue with",
+                "second-person callout: put the viewer in the scene ('you' did/said/felt something)",
+                "incomplete comparison: start a comparison and cut it off before the punchline",
+                "time-pressure fragment: reference a specific moment/timestamp without explaining it",
+                "deadpan label: name what's happening using flat, almost bureaucratic language for ironic contrast",
+            ]
+            chosen_techniques = random.sample(_ALL_TECHNIQUES, 5)
+            techniques_block = "\n".join(f"- {t}" for t in chosen_techniques)
 
-Here is a detailed analysis of a video in the "{vibe}" niche:
+            phase2_prompt = f"""You are writing ONE YouTube Shorts title. This is the only video you've
+ever titled — there is no "house style" to fall back on, no prior hits to imitate.
+Everything in this title has to come from what's actually in THIS video.
 
+VIDEO ANALYSIS:
 KEY MOMENT: {analysis['key_moment']}
 EMOTIONAL ARC: {analysis['emotional_arc']}
 SHAREABILITY: {analysis['shareability_factor']}
 CORE HOOK: {analysis['core_hook']}
 SUBJECTS: {', '.join(analysis['subject_entities'])}
 
-Generate 5 COMPLETELY DIFFERENT title candidates using different hook techniques.
-Then rank them and pick the absolute best one.
+Generate 5 title candidates, one per technique below, applied specifically to the
+key moment and subjects above — not generic versions of the technique:
 
-TITLE RULES:
-- UNDER 55 characters (mobile truncation kills reach)
-- Authentic lowercase Gen-Z voice — NOT formal English
-- Front-load the hook (first 3-4 words must grab attention)
-- Create an irresistible curiosity gap or emotional reaction
-- NO emojis unless they genuinely add to the vibe (vary it — most titles work better without)
-- NEVER use dead patterns: "You won't believe...", "Wait for it...", "Watch until the end"
-- NEVER use AI slop: 'unleash', 'epic', 'ultimate', 'revolutionary', 'incredible', 'amazing', 'unbelievable', 'insane'
+{techniques_block}
 
-HALL OF FAME (study these patterns):
-- "he wasn't supposed to catch that"
-- "bro thought he was safe 💀"
-- "this is why nobody invites him"
-- "the betrayal at 0:08 though"
-- "pov: you finally snapped"
-- "tell me this isn't rigged"
-- "she did NOT just say that"
-- "i can't unsee this"
+THE ONE RULE THAT MATTERS MOST: a title must create a gap, not close one.
+If a viewer can read the title and already know how the video ends, you've failed —
+delete the part that resolves it and leave only the part that creates the question.
+Never state the outcome, the punchline, or the "twist" itself. State the SETUP and
+let the viewer's curiosity do the rest.
 
-HALL OF SHAME (NEVER write titles like these):
-- "A Funny Dog Playing With A Ball"
-- "Amazing Moment Caught On Camera!"
-- "You Won't Believe What Happens Next"
-- "Epic Fail Caught on Camera"
-"""
+OTHER RULES:
+- Under 55 characters (mobile truncation kills reach)
+- Lowercase, plain, sounds like something a person typed in 4 seconds, not composed
+- Don't tell the viewer how to feel ("hilarious", "wholesome", "satisfying") — show
+  the thing that would make them feel it
+- Don't narrate that this is a video ("watch as", "this video shows", "the moment when")
+- No emojis unless one specific emoji is doing real comedic work — most titles
+  shouldn't have one at all
+- It's fine for a title to be a fragment, slightly ungrammatical, or specific to
+  the point of sounding weirdly random — that specificity is what makes it feel real
+
+After writing all 5, rank them by which one creates the strongest unresolved
+question, and pick the best one."""
 
             best_title = None
             for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
@@ -516,9 +575,33 @@ HALL OF SHAME (NEVER write titles like these):
             # ==================== PHASE 3: SUPPORTING METADATA ====================
             logger.info("[PHASE 3] Generating description, tags, and engagement metadata with gemini-3.5-flash...")
 
-            phase3_prompt = f"""You are a YouTube Shorts SEO and engagement specialist.
+            # Rotating the description's STRUCTURE (not just its words) matters —
+            # a fixed "hook line / context lines / hashtags" template is itself an
+            # AI fingerprint, since real creators don't write to one formula every
+            # single time. Picking a random shape per call breaks that pattern.
+            _DESCRIPTION_SHAPES = [
+                (
+                    "ONE LINE ONLY before the hashtags: a single punchy line that's either "
+                    "a callout, a question, or a flat statement of the absurd thing that "
+                    "happened. No build-up, no context paragraph — just the line, then hashtags."
+                ),
+                (
+                    "TWO LINES before the hashtags: line 1 is a hook or reaction, line 2 adds "
+                    "one specific, slightly tangential detail (almost an aside) that naturally "
+                    "includes a keyword — not a recap of the video, more like something you'd "
+                    "add as an afterthought."
+                ),
+                (
+                    "QUESTION-LED: open by asking the viewer something directly related to the "
+                    "key moment (not 'what do you think' — something specific they'd actually "
+                    "want to answer), then one short follow-up line, then hashtags."
+                ),
+            ]
+            chosen_shape = random.choice(_DESCRIPTION_SHAPES)
 
-A video in the "{vibe}" niche has been analyzed and titled. Your job is to generate the supporting metadata.
+            phase3_prompt = f"""You are writing the description for ONE YouTube Short. This is the only
+video you're describing — write it the way an actual person posting THIS specific
+video would, not in a reusable template.
 
 VIDEO ANALYSIS:
 - Key moment: {analysis['key_moment']}
@@ -527,20 +610,25 @@ VIDEO ANALYSIS:
 
 CHOSEN TITLE: "{best_title}"
 
-Generate the description, tags, thumbnail recommendation, and pinned comment that perfectly complement this title.
+DESCRIPTION SHAPE FOR THIS ONE: {chosen_shape}
 
-DESCRIPTION RULES:
-- Line 1: Punchy hook or controversial statement (NEVER "In this video..." or "Welcome back")
-- Lines 2-3: Natural context with organic SEO keywords
-- Final line: 10 to 13 hashtags total, niche-first then mainstream. Vary the exact count and the split
-  slightly from video to video instead of always landing on the same numbers — roughly 55-65% should be
-  NICHE hashtags tied directly to this video's specific subjects/characters/objects
-  (e.g. #SpecificTopic #NicheSubject #TopicVariation), and the remainder MAINSTREAM
-  hashtags for broad discovery — the kind of tags real high-view videos in this category actually use
-  (e.g. #broadcategory #shorts #relatable #trending — pick whichever genuinely fit this
-  video's category/vibe).
-- This is a NEW account, so mainstream hashtags are required this time for discovery reach —
-  do not skip them or replace them all with niche tags.
+Whatever shape you use, the text before the hashtags must:
+- Never restate the title — add NEW information or a different angle on it
+- Never use AI-intro phrasing ("In this video...", "Welcome back...", "Here's what happens...")
+- Never explain that something is funny/wholesome/satisfying — just describe the
+  specific thing, let it land on its own
+- Sound like it was typed in 10 seconds on a phone, not composed
+
+HASHTAG LINE (after the text, same field):
+- 10 to 13 hashtags total, niche-first then mainstream. Vary the exact count and
+  the split slightly from video to video instead of always landing on the same
+  numbers — roughly 55-65% should be NICHE hashtags tied directly to this video's
+  specific subjects/characters/objects (e.g. #SpecificTopic #NicheSubject), and
+  the remainder MAINSTREAM hashtags for broad discovery, the kind real high-view
+  videos in this category actually use (e.g. #broadcategory #shorts #relatable
+  #trending — pick whichever genuinely fit this video's category/vibe).
+- This is a NEW account, so mainstream hashtags are required this time for
+  discovery reach — do not skip them or replace them all with niche tags.
 
 TAG RULES (the "Tags" field, separate from hashtags):
 - 12 to 15 tags total, niche-first then mainstream. Vary the exact count and the split slightly from
@@ -554,6 +642,7 @@ TAG RULES (the "Tags" field, separate from hashtags):
   portion, and "what would someone type to find THIS EXACT video?" for the niche portion.
 
 PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
+Make it sound like a person being nosy or stirring something, not a survey question.
 THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
 
             metadata = None
