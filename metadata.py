@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 from logging.handlers import RotatingFileHandler
 from typing import Optional
@@ -251,6 +252,12 @@ def _check_title_quality(title: str) -> Optional[str]:
     if len(title.strip()) > 55:
         return f"Title too long ({len(title.strip())} chars)"
 
+    # Timestamps in a title are meaningless on Shorts (no clickable scrubber in
+    # the feed) and were a recurring AI tell from older prompt versions. Catch
+    # this independent of the prompt wording, as a backstop.
+    if re.search(r"\b\d{1,2}:\d{2}\b", title):
+        return "Contains a timestamp, which is meaningless on Shorts"
+
     title_lower = title.lower()
 
     for pattern in _NARRATING_PATTERNS:
@@ -284,7 +291,6 @@ def _log_hashtag_and_tag_counts(
     """Logs hashtag/tag counts AND verifies the claimed niche/mainstream split against the
     actual ordering, so the 55-65% niche ratio is checked in code instead of pure prompt-trust.
     Non-fatal — just visibility, since Gemini won't always land inside the target range."""
-    import re
     hashtags = re.findall(r"#\w+", description)
     n_hashtags = len(hashtags)
     n_tags = len(tags)
@@ -490,7 +496,6 @@ Be specific and detailed. Reference exact moments in the video."""
                 "false confidence: state something the viewer will immediately want to argue with",
                 "second-person callout: put the viewer in the scene ('you' did/said/felt something)",
                 "incomplete comparison: start a comparison and cut it off before the punchline",
-                "time-pressure fragment: reference a specific moment/timestamp without explaining it",
                 "deadpan label: name what's happening using flat, almost bureaucratic language for ironic contrast",
             ]
             chosen_techniques = random.sample(_ALL_TECHNIQUES, 5)
