@@ -127,19 +127,25 @@ class SupportingMetadata(BaseModel):
             "A concise YouTube Shorts description. "
             "Line 1 MUST be a hard-hitting hook or controversial question. "
             "Lines 2-3 should provide brief, natural-sounding context that weaves in SEO keywords. "
-            "End with exactly 5-7 highly specific, algorithm-friendly hashtags on a single line. "
-            "CRITICAL: NEVER use generic hashtags like #viral, #funnymemes, #trending, #fyp, #Shorts, #funny, #meme, #comedy, #lol. "
-            "Only use niche-specific entity tags (e.g., #CarRestoration, #GoldenRetriever, #StreetFood). "
+            "End with EXACTLY 13 hashtags total on a single line, ordered niche-first then mainstream: "
+            "8 NICHE hashtags — specific entity/character/subject tags tied directly to this video "
+            "(e.g. #MisaAmane, #DeathNoteEdit, #GoldenRetriever, #StreetFood, #CarRestoration). "
+            "5 MAINSTREAM hashtags — broad discovery tags real high-performing videos in this category use "
+            "for top-of-funnel reach (e.g. #anime, #animeedit, #shorts, #relatable, #comedy, #fyp — "
+            "pick the 5 that genuinely fit the video's category/vibe). "
             "Never use generic AI intros like 'In this video...' or 'Welcome back...'."
         )
     )
     tags: list[str] = Field(
         ...,
         description=(
-            "10-15 high-search-volume YouTube tags as multi-word keyword phrases (no # symbols). "
-            "CRITICAL: Ban all generic tags (viral, funny, meme, trending, shorts). "
-            "Think 'what would someone type into YouTube search to find this exact video?'. "
-            "Use specific phrases like 'dog steals pizza from table', NOT single words like 'funny'."
+            "EXACTLY 15 YouTube tags (no # symbols), ordered niche-first then mainstream: "
+            "9 NICHE tags — specific multi-word search phrases tied to the exact subjects/entities/characters "
+            "in this video (e.g. 'misa amane aesthetic', 'dog steals pizza from table', 'death note light and misa'). "
+            "6 MAINSTREAM tags — broader single-word or short-phrase category tags that real high-view videos "
+            "in this niche rank for, used purely for discovery reach (e.g. 'anime', 'anime edits', 'anime shorts', "
+            "'comedy shorts', 'funny shorts', 'relatable humor' — pick the 6 that fit this video's category). "
+            "Every tag, niche or mainstream, must be something a real person would plausibly type into YouTube search."
         )
     )
     thumbnail_recommendation: str = Field(
@@ -160,7 +166,9 @@ class SupportingMetadata(BaseModel):
     @field_validator("tags")
     @classmethod
     def cap_tags(cls, v: list[str]) -> list[str]:
-        return [t.strip("#").strip() for t in v]
+        cleaned = [t.strip("#").strip() for t in v]
+        # Upper cap of 15 tags, matching the higher-performing reference post.
+        return cleaned[:15]
 
 
 # --- Title Quality Gate ---
@@ -194,6 +202,21 @@ def _check_title_quality(title: str) -> Optional[str]:
             return "Title looks too formal/capitalized (not Gen-Z voice)"
 
     return None
+
+
+def _log_hashtag_and_tag_counts(description: str, tags: list[str]) -> None:
+    """Logs hashtag/tag counts so you can sanity-check the niche:mainstream ratio in practice.
+    Non-fatal — just visibility, since Gemini won't always hit the exact split."""
+    import re
+    hashtags = re.findall(r"#\w+", description)
+    logger.info(
+        f"[PHASE 3] Hashtag count: {len(hashtags)} (target 13) | "
+        f"Tag count: {len(tags)} (target 15, hard cap 15)"
+    )
+    if len(hashtags) < 10 or len(hashtags) > 13:
+        logger.warning(f"[PHASE 3] Hashtag count drifted from target: got {len(hashtags)} — {hashtags}")
+    if len(tags) < 12:
+        logger.warning(f"[PHASE 3] Tag count lower than expected: got {len(tags)} — {tags}")
 
 
 def get_gemini_client() -> genai.Client:
@@ -431,15 +454,24 @@ Generate the description, tags, thumbnail recommendation, and pinned comment tha
 DESCRIPTION RULES:
 - Line 1: Punchy hook or controversial statement (NEVER "In this video..." or "Welcome back")
 - Lines 2-3: Natural context with organic SEO keywords
-- Final line: 5-7 niche-specific hashtags
-- BANNED: #viral, #fyp, #trending, #shorts, #funnymemes, #funny, #meme, #memes, #comedy, #lol
-- GOOD: specific entity hashtags like #GoldenRetriever, #StreetFood, #Woodworking
+- Final line: EXACTLY 13 hashtags, niche-first then mainstream:
+    * 8 NICHE hashtags tied directly to this video's specific subjects/characters/objects
+      (e.g. #MisaAmane #DeathNoteEdit #GoldenRetriever #StreetFoodVendor)
+    * 5 MAINSTREAM hashtags for broad discovery — the kind of tags real high-view videos in
+      this category actually use (e.g. #anime #animeedit #shorts #relatable #comedy #fyp #funny —
+      pick whichever 5 genuinely fit this video's category/vibe)
+- This is a NEW account, so mainstream tags are required this time for discovery reach —
+  do not skip them or replace them with more niche tags.
 
-TAG RULES:
-- 10-15 specific multi-word search phrases
-- Think "what would someone type into YouTube search to find THIS video?"
-- Include the specific subjects: {', '.join(analysis['subject_entities'])}
-- NO generic single words
+TAG RULES (the "Tags" field, separate from hashtags):
+- EXACTLY 15 tags total, niche-first then mainstream:
+    * 9 NICHE tags — specific multi-word phrases tied to exact subjects: {', '.join(analysis['subject_entities'])}
+      (e.g. "misa amane aesthetic", "dog steals pizza from table")
+    * 6 MAINSTREAM tags — broader category/discovery tags real viral videos in this niche rank for
+      (e.g. "anime", "anime edits", "anime shorts", "comedy shorts", "funny shorts", "relatable humor" —
+      pick the 6 that best fit this video's category)
+- Think "what would someone type into YouTube search to find content LIKE this?" for the mainstream
+  half, and "what would someone type to find THIS EXACT video?" for the niche half.
 
 PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
 THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
@@ -456,6 +488,7 @@ THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
                     )
                     if metadata:
                         logger.info(f"[PHASE 3] Metadata complete. Tags: {metadata.get('tags', [])[:5]}...")
+                        _log_hashtag_and_tag_counts(metadata.get("description", ""), metadata.get("tags", []))
                         break
                 except Exception as e:
                     logger.warning(f"[PHASE 3] {model} failed: {e}")
