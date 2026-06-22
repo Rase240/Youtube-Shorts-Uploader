@@ -16,23 +16,20 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_PROJECT_DIR, ".env"))
 
-# Set up logging to both console and a rotating file
 _LOG_FORMAT = "%(asctime)s - %(levelname)s - [%(name)s] - %(message)s"
 _LOG_FILE = os.path.join(_PROJECT_DIR, "youtube_bot.log")
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 
-# Prevent duplicate handlers
 if not root_logger.handlers:
-    # Console handler
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
     root_logger.addHandler(console_handler)
-
-    # Rotating File handler (max 5MB, keeping 3 backups)
     try:
-        file_handler = RotatingFileHandler(_LOG_FILE, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+        file_handler = RotatingFileHandler(
+            _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
         file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
         root_logger.addHandler(file_handler)
     except Exception as e:
@@ -41,6 +38,19 @@ if not root_logger.handlers:
 logger = logging.getLogger(__name__)
 
 
+# ── Custom Exceptions ────────────────────────────────────────────────────────
+
+class QuotaExhaustedError(RuntimeError):
+    """Raised when Gemini quota is exhausted after all retries.
+
+    Unlike transient UNAVAILABLE errors, switching models won't help here —
+    both use the same API key and the same account-level quota. The caller
+    should queue the video for later rather than crashing or hammering the API.
+    """
+    pass
+
+
+# ── Pydantic Schemas ─────────────────────────────────────────────────────────
 
 class VideoAnalysis(BaseModel):
     """Phase 1 output: Deep analysis of the video content."""
@@ -80,6 +90,17 @@ class VideoAnalysis(BaseModel):
             "These will be used for SEO tags later."
         )
     )
+    title_setups: list[str] = Field(
+        ...,
+        description=(
+            "Generate exactly 3 raw title-seed observations — the most specific, concrete things "
+            "you noticed that a title writer can build from. Each should be a brief, visual observation "
+            "(NOT a polished title), e.g.: 'the cat slowly turns its head right before the noise hits' "
+            "or 'the person's expression goes from confident to pure panic in under one second'. "
+            "Focus on the single most shareable moment and what makes it funny/shocking/relatable. "
+            "Be hyper-specific and visual — the more granular, the more useful for the title writer."
+        )
+    )
 
 
 class TitleCandidates(BaseModel):
@@ -109,11 +130,9 @@ class TitleCandidates(BaseModel):
     )
 
     @field_validator("best_title")
-    @classmethod
     def cap_title(cls, v: str) -> str:
         if len(v) > 55:
             truncated = v[:52]
-            # Cut at last space to avoid chopping mid-word
             last_space = truncated.rfind(" ")
             if last_space > 20:
                 truncated = truncated[:last_space]
@@ -189,10 +208,8 @@ class SupportingMetadata(BaseModel):
     )
 
     @field_validator("tags")
-    @classmethod
     def cap_tags(cls, v: list[str]) -> list[str]:
         cleaned = [t.strip("#").strip() for t in v]
-        # Hard upper cap of 15 tags — matches the top of the 12-15 target range.
         if len(cleaned) > 15:
             logger.warning(
                 f"[PHASE 3] Model returned {len(cleaned)} tags, truncating to 15. "
@@ -202,10 +219,8 @@ class SupportingMetadata(BaseModel):
         return cleaned
 
 
-# --- Title Quality Gate ---
-# Word bans are whack-a-mole — there's always a new slop word. Kept as a thin
-# last-resort net for the most persistent offenders, but the real filtering
-# below is at the PATTERN/BEHAVIOR level, which generalizes much better.
+# ── Title Quality Gate ───────────────────────────────────────────────────────
+
 _BANNED_TITLE_WORDS = {
     "unleash", "epic", "ultimate", "revolutionary", "incredible", "amazing",
     "unbelievable", "mind-blowing", "jaw-dropping", "insane",
@@ -213,10 +228,6 @@ _BANNED_TITLE_WORDS = {
     "look no further", "mastering", "testament", "revolutionize",
 }
 
-# Narrating/explaining the video instead of just hooking the viewer is the
-# single biggest AI tell — it's the model describing the content rather than
-# dropping the viewer into it. Catching this pattern matters more than any
-# specific word.
 _NARRATING_PATTERNS = {
     "this video shows", "in this video", "here's what happens",
     "here is what happens", "this is the moment", "the moment when",
@@ -226,9 +237,6 @@ _NARRATING_PATTERNS = {
     "wait for it", "watch until the end", "must see", "gone wrong", "gone viral",
 }
 
-# If a title both sets up a scenario and resolves it with one of these, the
-# curiosity gap is gone — there's no reason left to tap. Heuristic flag, not
-# a perfect detector, but catches the common "and then X happened" failure.
 _RESOLUTION_GIVEAWAYS = {
     "and won", "and lost", "and died", "and survived", "and failed",
     "and succeeded", "and it worked", "and it broke", "ends with",
@@ -237,13 +245,13 @@ _RESOLUTION_GIVEAWAYS = {
 
 
 def _check_title_quality(title: str) -> Optional[str]:
-    """Returns a rejection reason if the title is low quality, None if it passes.
+    """Returns a rejection reason if the title fails quality checks, None if it passes.
 
-    Ordered by how often each failure mode actually shows up in practice:
+    Ordered by frequency of failure in practice:
       1. Length / formatting
-      2. Narrating/explaining instead of hooking (the main AI tell)
-      3. Resolving the curiosity gap instead of preserving it
-      4. Leftover slop words (last-resort net)
+      2. Narrating/explaining (main AI tell)
+      3. Giving away the resolution
+      4. Banned slop words (last-resort net)
       5. Overly formal capitalization
     """
     if not title or len(title.strip()) < 10:
@@ -252,11 +260,8 @@ def _check_title_quality(title: str) -> Optional[str]:
     if len(title.strip()) > 55:
         return f"Title too long ({len(title.strip())} chars)"
 
-    # Timestamps in a title are meaningless on Shorts (no clickable scrubber in
-    # the feed) and were a recurring AI tell from older prompt versions. Catch
-    # this independent of the prompt wording, as a backstop.
     if re.search(r"\b\d{1,2}:\d{2}\b", title):
-        return "Contains a timestamp, which is meaningless on Shorts"
+        return "Contains a timestamp, meaningless on Shorts"
 
     title_lower = title.lower()
 
@@ -266,18 +271,20 @@ def _check_title_quality(title: str) -> Optional[str]:
 
     for pattern in _RESOLUTION_GIVEAWAYS:
         if pattern in title_lower:
-            return f"Gives away the resolution, kills the curiosity gap: '{pattern}'"
+            return f"Gives away the resolution: '{pattern}'"
 
     for banned in _BANNED_TITLE_WORDS:
         if banned in title_lower:
             return f"Contains banned word/phrase: '{banned}'"
 
-    # Reject overly formal/capitalized titles (e.g. "A Funny Dog Playing With A Ball")
+    # Flag heavily title-cased titles (e.g. "A Funny Dog Playing With A Ball").
+    # - Start from words[1:] — a leading capital is normal in a sentence.
+    # - Only count words > 2 chars to avoid flagging "I", "TV", initialisms, etc.
     words = title.split()
-    if len(words) >= 4:
-        capitalized = sum(1 for w in words if w[0].isupper() and len(w) > 1)
-        if capitalized / len(words) > 0.7:
-            return "Title looks too formal/capitalized (not Gen-Z voice)"
+    if len(words) >= 5:
+        capitalized = sum(1 for w in words[1:] if len(w) > 2 and w[0].isupper())
+        if capitalized / (len(words) - 1) > 0.75:
+            return "Title looks too formally capitalized (not Gen-Z voice)"
 
     return None
 
@@ -288,190 +295,185 @@ def _log_hashtag_and_tag_counts(
     niche_hashtag_count: int,
     niche_tag_count: int,
 ) -> None:
-    """Logs hashtag/tag counts AND verifies the claimed niche/mainstream split against the
-    actual ordering, so the 55-65% niche ratio is checked in code instead of pure prompt-trust.
-    Non-fatal — just visibility, since Gemini won't always land inside the target range."""
+    """Logs hashtag/tag counts and verifies niche/mainstream split. Non-fatal."""
     hashtags = re.findall(r"#\w+", description)
     n_hashtags = len(hashtags)
     n_tags = len(tags)
 
     logger.info(
-        f"[PHASE 3] Hashtag count: {n_hashtags} (target range 10-13) | "
-        f"Tag count: {n_tags} (target range 12-15, hard cap 15)"
+        f"[PHASE 3] Hashtag count: {n_hashtags} (target 10-13) | "
+        f"Tag count: {n_tags} (target 12-15, hard cap 15)"
     )
     if n_hashtags < 10 or n_hashtags > 13:
         logger.warning(f"[PHASE 3] Hashtag count outside target range: got {n_hashtags} — {hashtags}")
     if n_tags < 12:
         logger.warning(f"[PHASE 3] Tag count below target range: got {n_tags} — {tags}")
 
-    # Verify the niche:mainstream ratio against the model's self-reported split point,
-    # rather than just trusting the prompt instruction blindly.
     if n_hashtags > 0:
-        # Clamp in case the model's self-reported count exceeds the actual hashtag count.
-        effective_niche_hashtag_count = min(niche_hashtag_count, n_hashtags)
-        hashtag_ratio = effective_niche_hashtag_count / n_hashtags
-        logger.info(
-            f"[PHASE 3] Hashtag niche split: {effective_niche_hashtag_count}/{n_hashtags} "
-            f"({hashtag_ratio:.0%} niche, target 55-65%)"
-        )
-        if not (0.50 <= hashtag_ratio <= 0.70):
-            logger.warning(
-                f"[PHASE 3] Hashtag niche ratio outside expected range: "
-                f"{effective_niche_hashtag_count}/{n_hashtags} = {hashtag_ratio:.0%}"
-            )
+        effective_niche = min(niche_hashtag_count, n_hashtags)
+        ratio = effective_niche / n_hashtags
+        logger.info(f"[PHASE 3] Hashtag niche split: {effective_niche}/{n_hashtags} ({ratio:.0%}, target 55-65%)")
+        if not (0.50 <= ratio <= 0.70):
+            logger.warning(f"[PHASE 3] Hashtag niche ratio outside range: {effective_niche}/{n_hashtags} = {ratio:.0%}")
         if niche_hashtag_count > n_hashtags:
-            logger.warning(
-                f"[PHASE 3] niche_hashtag_count ({niche_hashtag_count}) exceeds actual hashtag "
-                f"count ({n_hashtags}) — likely model inconsistency."
-            )
+            logger.warning(f"[PHASE 3] niche_hashtag_count ({niche_hashtag_count}) > actual count ({n_hashtags})")
 
     if n_tags > 0:
-        # Clamp in case the model's self-reported split point predates the cap_tags truncation.
-        effective_niche_tag_count = min(niche_tag_count, n_tags)
-        tag_ratio = effective_niche_tag_count / n_tags
-        logger.info(
-            f"[PHASE 3] Tag niche split: {effective_niche_tag_count}/{n_tags} "
-            f"({tag_ratio:.0%} niche, target 55-65%)"
-        )
-        if not (0.50 <= tag_ratio <= 0.70):
-            logger.warning(
-                f"[PHASE 3] Tag niche ratio outside expected range: "
-                f"{effective_niche_tag_count}/{n_tags} = {tag_ratio:.0%}"
-            )
+        effective_niche = min(niche_tag_count, n_tags)
+        ratio = effective_niche / n_tags
+        logger.info(f"[PHASE 3] Tag niche split: {effective_niche}/{n_tags} ({ratio:.0%}, target 55-65%)")
+        if not (0.50 <= ratio <= 0.70):
+            logger.warning(f"[PHASE 3] Tag niche ratio outside range: {effective_niche}/{n_tags} = {ratio:.0%}")
         if niche_tag_count > n_tags:
-            logger.warning(
-                f"[PHASE 3] niche_tag_count ({niche_tag_count}) exceeds actual tag "
-                f"count ({n_tags}) — likely due to cap_tags truncation or model inconsistency."
-            )
+            logger.warning(f"[PHASE 3] niche_tag_count ({niche_tag_count}) > actual count ({n_tags})")
 
 
 def get_gemini_client() -> genai.Client:
     return genai.Client()
 
 
-async def _call_gemini(client, model: str, contents, schema, max_tokens: int, temperature: float, max_attempts: int = 3):
-    """Helper to call Gemini with retries and model fallback."""
+async def _call_gemini(
+    client,
+    model: str,
+    contents: list,
+    schema,
+    max_tokens: int,
+    temperature: float,
+    sys_instruct: Optional[str] = None,
+    max_attempts: int = 3,
+):
+    """Call Gemini with retries, leveraging native Pydantic parsing and system instructions."""
     for attempt in range(max_attempts):
         try:
             response = await client.aio.models.generate_content(
                 model=model,
                 contents=contents,
                 config=types.GenerateContentConfig(
+                    system_instruction=sys_instruct,
                     response_mime_type="application/json",
                     response_schema=schema,
                     max_output_tokens=max_tokens,
                     temperature=temperature,
                 ),
             )
-            if response and response.text:
-                text = response.text.strip()
-                if text.startswith("```json"):
-                    text = text[7:]
-                if text.startswith("```"):
-                    text = text[3:]
-                if text.endswith("```"):
-                    text = text[:-3]
-                text = text.strip()
-                parsed = json.loads(text)
-                validated = schema.model_validate(parsed)
-                return validated.model_dump()
+            
+            # 🚀 The SDK handles all the JSON parsing and validation natively
+            if response.parsed:
+                return response.parsed.model_dump()
             else:
-                logger.warning(f"[GEMINI] Empty response from {model} on attempt {attempt + 1}/{max_attempts}.")
+                logger.warning(f"[GEMINI] Empty or unparseable response from {model} on attempt {attempt + 1}/{max_attempts}.")
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(2)
+
         except APIError as e:
             error_str = str(e).upper()
-            if ("UNAVAILABLE" in error_str or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str) and attempt < max_attempts - 1:
-                wait_time = 15 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str else 5
-                logger.warning(f"[GEMINI] {model} rate-limited/unavailable, retrying in {wait_time}s ({attempt + 1}/{max_attempts})...")
+            is_quota = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+            is_unavailable = "UNAVAILABLE" in error_str
+
+            if (is_quota or is_unavailable) and attempt < max_attempts - 1:
+                wait_time = 15 if is_quota else 5
+                logger.warning(
+                    f"[GEMINI] {model} {'rate-limited' if is_quota else 'unavailable'} — "
+                    f"retrying in {wait_time}s (attempt {attempt + 1}/{max_attempts})..."
+                )
                 await asyncio.sleep(wait_time)
+
+            elif is_quota:
+                logger.error(
+                    f"[GEMINI] Quota exhausted on {model} after {max_attempts} attempts. "
+                    f"Daily limit likely hit — skipping this video."
+                )
+                raise QuotaExhaustedError(f"Gemini quota exhausted after {max_attempts} retries: {e}") from e
+
             else:
                 raise
-        except (json.JSONDecodeError, ValidationError) as je:
-            logger.warning(f"[GEMINI] Validation or JSON parse failed on attempt {attempt + 1}/{max_attempts}: {je}")
+
+        except ValidationError as je:
+            # We only need to catch ValidationError now, json.JSONDecodeError is obsolete
+            logger.warning(f"[GEMINI] Pydantic validation failed on attempt {attempt + 1}/{max_attempts}: {je}")
             if attempt >= max_attempts - 1:
                 raise
             await asyncio.sleep(2)
+
         except Exception as e:
             logger.warning(f"[GEMINI] Unexpected error on attempt {attempt + 1}/{max_attempts}: {e}")
             if attempt >= max_attempts - 1:
                 raise
             await asyncio.sleep(2)
+
     return None
 
 
 async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
     """
     3-phase metadata generation pipeline:
-      Phase 1 (Analysis):  gemini-3.5-flash watches the video → deep analysis
-      Phase 2 (Title):     gemini-3.5-flash crafts 5 title candidates → picks best
-      Phase 3 (Metadata):  gemini-3.5-flash generates description, tags, etc.
+      Phase 1 (Analysis):  model watches video → deep analysis + 3 title-seed observations
+      Phase 2 (Title):     model WATCHES VIDEO AGAIN + uses seeds → 5 candidates → picks best
+      Phase 3 (Metadata):  generates description, tags, thumbnail rec, pinned comment
 
-    Args:
-        video_path: Path to the video file to upload.
-        vibe:       The vibe/niche e.g. 'funny meme', 'gaming fail', 'relatable moment'.
-
-    Returns:
-        Dict with keys: title, description, tags, thumbnail_recommendation, pinned_comment_suggestion,
-        plus analysis fields — or None on failure.
+    Returns None on quota exhaustion (caller should queue for retry) or None on unrecoverable
+    failure (caller should log and skip). Raises RuntimeError for unexpected errors.
     """
     client = get_gemini_client()
     video_file = None
 
-    logger.info(f"[GEMINI] Uploading video {video_path} for processing...")
+    logger.info(f"[GEMINI] Uploading video: {video_path}")
     try:
-        # Upload the video
         video_file = await client.aio.files.upload(file=video_path)
-        logger.info(f"[GEMINI] Uploaded. Waiting for processing to finish...")
+        logger.info("[GEMINI] Uploaded. Waiting for processing...")
 
         try:
-            # Poll until ACTIVE (timeout after 120s to prevent infinite hang)
-            max_polls = 60  # 60 * 2s = 120 seconds max
-            for poll_attempt in range(max_polls):
+            max_polls = 60
+            for _ in range(max_polls):
                 video_file_info = await client.aio.files.get(name=video_file.name)
                 if video_file_info.state == "ACTIVE":
                     break
                 elif video_file_info.state == "FAILED":
-                    logger.error("[GEMINI] Video processing failed on Google's end.")
                     raise RuntimeError("Video processing failed on Google's end.")
                 await asyncio.sleep(2)
             else:
-                logger.error(f"[GEMINI] Video processing timed out after {max_polls * 2}s (state: {video_file_info.state})")
-                raise RuntimeError(f"Video processing timed out after {max_polls * 2}s")
+                raise RuntimeError(f"Video processing timed out after {max_polls * 2}s (state: {video_file_info.state})")
 
-            logger.info("[GEMINI] Video ready. Starting 3-phase metadata pipeline...")
+            logger.info("[GEMINI] Video ready. Starting 3-phase pipeline...")
 
-            # ==================== PHASE 1: VIDEO ANALYSIS ====================
-            logger.info("[PHASE 1] Analyzing video content with gemini-3.5-flash...")
+            # ════════════════════ PHASE 1: VIDEO ANALYSIS ════════════════════
+            logger.info("[PHASE 1] Analyzing video...")
 
             phase1_prompt = f"""You are an expert video content analyst. Watch this video CAREFULLY.
 
-The creator says the intended vibe/niche is: {vibe}
+The creator's intended vibe/niche: {vibe}
 
-Your job is to deeply analyze this video so that a title strategist can craft the perfect viral title.
+Deeply analyze this video so a title strategist can craft the perfect viral title.
 
 Focus on:
-- The single most striking/funny/shocking moment and WHEN it happens
-- The emotional journey a viewer goes through
-- Why someone would share this with a friend
-- The core irresistible hook
+- The single most striking/funny/shocking moment and exactly when it happens
+- The emotional journey a viewer goes through start to finish
+- Why someone would send this to a friend
+- The core irresistible hook that makes it impossible to scroll past
 - Specific subjects/entities visible in the video (for SEO)
+- 3 raw title-seed observations — the most specific, granular things you noticed
+  that could be the kernel of a great title. NOT polished titles — raw observations.
+  Think: "what's the one-second thing you'd describe to a friend to explain why you sent them this?"
 
-Be specific and detailed. Reference exact moments in the video."""
+Be specific and visual. Reference exact moments in the video."""
 
             analysis = None
             for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
                 try:
                     analysis = await _call_gemini(
                         client, model,
-                        contents=[video_file, phase1_prompt],
+                        contents=[video_file],
                         schema=VideoAnalysis,
                         max_tokens=1500,
                         temperature=0.7,
+                        sys_instruct=phase1_prompt,
                     )
                     if analysis:
-                        logger.info(f"[PHASE 1] Analysis complete. Core hook: {analysis.get('core_hook', 'N/A')}")
+                        logger.info(f"[PHASE 1] Done. Core hook: {analysis.get('core_hook', 'N/A')}")
+                        logger.info(f"[PHASE 1] Title seeds: {analysis.get('title_setups', [])}")
                         break
+                except QuotaExhaustedError:
+                    raise  # account-level — no point trying the next model
                 except Exception as e:
                     logger.warning(f"[PHASE 1] {model} failed: {e}")
                     continue
@@ -479,31 +481,31 @@ Be specific and detailed. Reference exact moments in the video."""
             if not analysis:
                 raise RuntimeError("Phase 1 (video analysis) failed on all models.")
 
-            # ==================== PHASE 2: TITLE GENERATION ====================
-            logger.info("[PHASE 2] Generating title candidates with gemini-3.5-flash...")
+            # ════════════════════ PHASE 2: TITLE GENERATION ════════════════════
+            logger.info("[PHASE 2] Generating title candidates...")
 
-            # Pull 5 random techniques from a larger pool each call. This forces the
-            # model to actually apply a *method* to THIS video's content instead of
-            # reaching for memorized example phrasings (which is what happens when a
-            # prompt includes literal sample titles — models anchor on them hard and
-            # you get the same 3 title shapes forever, just with nouns swapped).
+            # Techniques that reliably produce grounded, specific titles.
+            # Removed "incomplete comparison" (produces fragment garbage like "funnier than—")
+            # and "deadpan label" (produces corporate-speak like "individual disrupts equilibrium").
+            # Both fail because they're abstract methods that don't anchor to specific content.
             _ALL_TECHNIQUES = [
-                "curiosity gap: name the setup, withhold the outcome entirely",
-                "accusation/callout: address someone in the video directly, as if catching them",
-                "understatement: describe something huge as if it's no big deal",
-                "overheard fragment: write it like a text message sent mid-reaction, not a headline",
-                "specific detail anchor: lead with one hyper-specific visual detail, not the general topic",
-                "false confidence: state something the viewer will immediately want to argue with",
-                "second-person callout: put the viewer in the scene ('you' did/said/felt something)",
-                "incomplete comparison: start a comparison and cut it off before the punchline",
-                "deadpan label: name what's happening using flat, almost bureaucratic language for ironic contrast",
+                "curiosity gap: name the exact setup visible in the video, withhold the outcome entirely — the viewer must watch to find out what happens",
+                "accusation/callout: address someone actually visible in the video as if catching them in the act, naming their specific action",
+                "understatement: describe the most extreme visible moment using the flattest, most casual language possible — make big feel small",
+                "reaction fragment: write the exact first thing you'd text a friend right after watching this specific clip, grounded in what actually happens on screen",
+                "specific detail anchor: lead with one hyper-specific visual detail from the video that's weird or funny out of context — nothing else, no explanation",
+                "false confidence: make a bold, specific claim about someone or something actually visible in this video that a viewer will immediately want to verify or argue with",
+                "second-person drop-in: put the viewer directly into the exact situation shown — use 'you' for the specific thing that happens in this video",
+                "scene contrast: name two things happening simultaneously in this video that shouldn't go together — leave it unresolved, let the absurdity do the work",
+                "peak expression: describe someone's face/body language/reaction at the exact peak moment in the most specific visual terms possible",
             ]
             chosen_techniques = random.sample(_ALL_TECHNIQUES, 5)
             techniques_block = "\n".join(f"- {t}" for t in chosen_techniques)
+            seeds_block = "\n".join(f"  • {s}" for s in analysis.get("title_setups", []))
 
-            phase2_prompt = f"""You are writing ONE YouTube Shorts title. This is the only video you've
-ever titled — there is no "house style" to fall back on, no prior hits to imitate.
-Everything in this title has to come from what's actually in THIS video.
+            phase2_prompt = f"""You are writing ONE YouTube Shorts title. Watch this video carefully.
+Everything in this title must come from what's actually visible in THIS specific video.
+There is no house style to fall back on — every word has to be earned by the content.
 
 VIDEO ANALYSIS:
 KEY MOMENT: {analysis['key_moment']}
@@ -512,78 +514,96 @@ SHAREABILITY: {analysis['shareability_factor']}
 CORE HOOK: {analysis['core_hook']}
 SUBJECTS: {', '.join(analysis['subject_entities'])}
 
-Generate 5 title candidates, one per technique below, applied specifically to the
-key moment and subjects above — not generic versions of the technique:
+RAW TITLE SEEDS (specific observations from the analyst — use these as your starting material):
+{seeds_block}
+
+Apply each technique below to the SPECIFIC content in this video. Ground every title in a real
+moment or detail that's actually visible. Do not write a generic version of the technique:
 
 {techniques_block}
 
-THE ONE RULE THAT MATTERS MOST: a title must create a gap, not close one.
-If a viewer can read the title and already know how the video ends, you've failed —
-delete the part that resolves it and leave only the part that creates the question.
-Never state the outcome, the punchline, or the "twist" itself. State the SETUP and
-let the viewer's curiosity do the rest.
+THE ONLY RULE THAT MATTERS: a title must CREATE a gap, not CLOSE one.
+If a viewer reads it and already knows how the video ends — you've failed.
+State the SETUP only. The outcome, punchline, and twist must not appear in the title.
 
-OTHER RULES:
-- Under 55 characters (mobile truncation kills reach)
-- Lowercase, plain, sounds like something a person typed in 4 seconds, not composed
-- Don't tell the viewer how to feel ("hilarious", "wholesome", "satisfying") — show
-  the thing that would make them feel it
-- Don't narrate that this is a video ("watch as", "this video shows", "the moment when")
-- No emojis unless one specific emoji is doing real comedic work — most titles
-  shouldn't have one at all
-- It's fine for a title to be a fragment, slightly ungrammatical, or specific to
-  the point of sounding weirdly random — that specificity is what makes it feel real
+ALL OTHER RULES (every candidate must satisfy all of these):
+- Under 55 characters — hard limit, mobile truncates here
+- Lowercase throughout — sounds like something typed in 4 seconds, not composed
+- No emotional labels ("hilarious", "wholesome", "satisfying") — show the thing, not the feeling
+- No narration ("watch as", "this video shows", "the moment when") — drop the viewer in directly
+- No emojis unless one specific emoji is doing real comedic work (most titles don't need one)
+- Fragments, slightly wrong grammar, weird specificity — all acceptable, all real
 
-After writing all 5, rank them by which one creates the strongest unresolved
-question, and pick the best one."""
+After writing all 5, rank by which creates the STRONGEST unresolved question.
+The best title is usually the most specific and the most incomplete."""
 
             best_title = None
+            last_title_data = None  # kept for quality-gate fallback
+
             for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
                 for attempt in range(3):
                     try:
                         title_data = await _call_gemini(
                             client, model,
-                            contents=[phase2_prompt],
+                            contents=[video_file],
                             schema=TitleCandidates,
                             max_tokens=2000,
                             temperature=1.0,
-                            max_attempts=3,  # Let _call_gemini handle API backoffs transparently
+                            sys_instruct=phase2_prompt,
+                            max_attempts=3,
                         )
                         if title_data:
+                            last_title_data = title_data
                             candidate = title_data.get("best_title", "")
                             quality_issue = _check_title_quality(candidate)
+
                             if quality_issue:
-                                logger.warning(f"[PHASE 2] Title rejected ({model}, attempt {attempt + 1}/3): {quality_issue} — '{candidate}'")
-                                # Try picking from the other candidates
+                                logger.warning(
+                                    f"[PHASE 2] best_title rejected ({model}, attempt {attempt + 1}/3): "
+                                    f"{quality_issue} — '{candidate}'"
+                                )
+                                # Scan alternates before re-prompting
                                 for alt in title_data.get("candidates", []):
                                     if alt != candidate and not _check_title_quality(alt):
                                         candidate = alt
                                         quality_issue = None
                                         logger.info(f"[PHASE 2] Using alternate candidate: '{candidate}'")
                                         break
+
                             if not quality_issue:
                                 best_title = candidate
                                 logger.info(f"[PHASE 2] Winning title: '{best_title}'")
                                 logger.info(f"[PHASE 2] All candidates: {title_data.get('candidates', [])}")
                                 logger.info(f"[PHASE 2] Reasoning: {title_data.get('ranking_reasoning', 'N/A')}")
                                 break
+
+                    except QuotaExhaustedError:
+                        raise
                     except Exception as e:
-                        # If we reach here, _call_gemini exhausted its 3 attempts
-                        logger.warning(f"[PHASE 2] {model} API completely failed: {e}")
-                        break # Stop trying to generate titles with this model and fall back to flash
+                        logger.warning(f"[PHASE 2] {model} completely failed: {e}")
+                        break  # _call_gemini exhausted its retries — try next model
+
                 if best_title:
                     break
 
+            # Quality-gate fallback: a slightly imperfect title is always better than
+            # crashing the pipeline and skipping the upload entirely. Log it loudly so
+            # you can tune the gate or the prompts later.
+            if not best_title and last_title_data:
+                fallback = last_title_data.get("best_title", "")
+                if fallback:
+                    logger.warning(
+                        f"[PHASE 2] All quality checks failed — using raw best_title as fallback: '{fallback}'. "
+                        f"Check logs to tune quality gate or prompts."
+                    )
+                    best_title = fallback
+
             if not best_title:
-                raise RuntimeError("Phase 2 (title generation) failed to produce a quality title.")
+                raise RuntimeError("Phase 2 (title generation) failed to produce any title.")
 
-            # ==================== PHASE 3: SUPPORTING METADATA ====================
-            logger.info("[PHASE 3] Generating description, tags, and engagement metadata with gemini-3.5-flash...")
+            # ════════════════════ PHASE 3: SUPPORTING METADATA ════════════════════
+            logger.info("[PHASE 3] Generating description, tags, and engagement metadata...")
 
-            # Rotating the description's STRUCTURE (not just its words) matters —
-            # a fixed "hook line / context lines / hashtags" template is itself an
-            # AI fingerprint, since real creators don't write to one formula every
-            # single time. Picking a random shape per call breaks that pattern.
             _DESCRIPTION_SHAPES = [
                 (
                     "ONE LINE ONLY before the hashtags: a single punchy line that's either "
@@ -604,9 +624,8 @@ question, and pick the best one."""
             ]
             chosen_shape = random.choice(_DESCRIPTION_SHAPES)
 
-            phase3_prompt = f"""You are writing the description for ONE YouTube Short. This is the only
-video you're describing — write it the way an actual person posting THIS specific
-video would, not in a reusable template.
+            phase3_prompt = f"""You are writing the description for ONE YouTube Short.
+Write it the way an actual person posting THIS specific video would — not a template.
 
 VIDEO ANALYSIS:
 - Key moment: {analysis['key_moment']}
@@ -620,48 +639,40 @@ DESCRIPTION SHAPE FOR THIS ONE: {chosen_shape}
 Whatever shape you use, the text before the hashtags must:
 - Never restate the title — add NEW information or a different angle on it
 - Never use AI-intro phrasing ("In this video...", "Welcome back...", "Here's what happens...")
-- Never explain that something is funny/wholesome/satisfying — just describe the
-  specific thing, let it land on its own
+- Never explain that something is funny/wholesome/satisfying — describe the specific thing, let it land
 - Sound like it was typed in 10 seconds on a phone, not composed
 
 HASHTAG LINE (after the text, same field):
-- 10 to 13 hashtags total, niche-first then mainstream. Vary the exact count and
-  the split slightly from video to video instead of always landing on the same
-  numbers — roughly 55-65% should be NICHE hashtags tied directly to this video's
-  specific subjects/characters/objects (e.g. #SpecificTopic #NicheSubject), and
-  the remainder MAINSTREAM hashtags for broad discovery, the kind real high-view
-  videos in this category actually use (e.g. #broadcategory #shorts #relatable
-  #trending — pick whichever genuinely fit this video's category/vibe).
-- This is a NEW account, so mainstream hashtags are required this time for
-  discovery reach — do not skip them or replace them all with niche tags.
+- 10 to 13 hashtags total, niche-first then mainstream. Vary count and split slightly each time.
+  Roughly 55-65% NICHE (tied to this video's specific subjects/characters/objects),
+  remainder MAINSTREAM for broad discovery (real high-view videos in this category use these).
+- This is a NEW account — mainstream hashtags are required for discovery reach.
 
-TAG RULES (the "Tags" field, separate from hashtags):
-- 12 to 15 tags total, niche-first then mainstream. Vary the exact count and the split slightly from
-  video to video instead of always landing on the same numbers — roughly 55-65% should be NICHE tags,
-  specific multi-word phrases tied to exact subjects: {', '.join(analysis['subject_entities'])}
-  (e.g. "specific topic description", "niche action phrase"), and the remainder MAINSTREAM tags —
-  broader category/discovery tags real viral videos in this niche rank for (e.g. "broad category",
-  "category shorts", "viral humor", "relatable concept" — pick whichever best fit this
-  video's category).
-- Think "what would someone type into YouTube search to find content LIKE this?" for the mainstream
-  portion, and "what would someone type to find THIS EXACT video?" for the niche portion.
+TAG RULES ("tags" field, separate from hashtags):
+- 12 to 15 tags, niche-first then mainstream. Vary count and split slightly each time.
+  Roughly 55-65% NICHE — specific multi-word phrases for: {', '.join(analysis['subject_entities'])}
+  Remainder MAINSTREAM — broader category/discovery tags real viral videos in this niche rank for.
+- Ask: "what would someone type to find THIS EXACT video?" (niche) vs
+  "what would someone type to find content LIKE this?" (mainstream)
 
-PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
-Make it sound like a person being nosy or stirring something, not a survey question.
-THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
+PINNED COMMENT: Short opinionated question that FORCES replies. Under 15 words.
+Sound like a nosy person stirring something, not a survey.
+
+THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max CTR."""
 
             metadata = None
             for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
                 try:
                     metadata = await _call_gemini(
                         client, model,
-                        contents=[phase3_prompt],
+                        contents=["Generate Phase 3 metadata based on the system instructions."],
                         schema=SupportingMetadata,
                         max_tokens=1500,
                         temperature=0.8,
+                        sys_instruct=phase3_prompt,
                     )
                     if metadata:
-                        logger.info(f"[PHASE 3] Metadata complete. Tags: {metadata.get('tags', [])[:5]}...")
+                        logger.info(f"[PHASE 3] Done. Tags sample: {metadata.get('tags', [])[:5]}...")
                         _log_hashtag_and_tag_counts(
                             metadata.get("description", ""),
                             metadata.get("tags", []),
@@ -669,6 +680,8 @@ THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
                             metadata.get("niche_tag_count", 0),
                         )
                         break
+                except QuotaExhaustedError:
+                    raise
                 except Exception as e:
                     logger.warning(f"[PHASE 3] {model} failed: {e}")
                     continue
@@ -676,43 +689,47 @@ THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
             if not metadata:
                 raise RuntimeError("Phase 3 (supporting metadata) failed on all models.")
 
-            # Combine all phases into final result
             final_result = {
                 "title": best_title,
                 "description": metadata["description"],
                 "tags": metadata["tags"],
                 "thumbnail_recommendation": metadata["thumbnail_recommendation"],
                 "pinned_comment_suggestion": metadata["pinned_comment_suggestion"],
-                # Bonus: include analysis for logging/debugging
                 "video_analysis": analysis["key_moment"],
                 "target_emotion": analysis["emotional_arc"],
                 "hook_style": analysis["core_hook"],
             }
 
-            logger.info(f"[DONE] 3-phase pipeline complete. Title: '{best_title}'")
+            logger.info(f"[DONE] Pipeline complete. Title: '{best_title}'")
             return final_result
 
         finally:
-            # Clean up the uploaded file to save quota
             if video_file:
                 try:
-                    logger.info("[GEMINI] Deleting video from Google's servers...")
+                    logger.info("[GEMINI] Deleting uploaded video from Google's servers...")
                     await client.aio.files.delete(name=video_file.name)
                 except Exception as cleanup_err:
                     logger.warning(f"[GEMINI] Failed to delete uploaded video (non-fatal): {cleanup_err}")
 
+    except QuotaExhaustedError as e:
+        # Return None so the caller can queue this video for later rather than crashing.
+        logger.error(
+            f"[QUOTA] Gemini quota exhausted — skipping '{video_path}'. "
+            f"Queue for retry when quota resets. Error: {e}"
+        )
+        return None
+
     except APIError as e:
         logger.error(f"Gemini API error: {e}")
         raise RuntimeError(f"Gemini API error: {e}") from e
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Gemini output as JSON: {e}")
-        raise RuntimeError(f"Failed to parse Gemini output as JSON: {e}") from e
+
     except Exception as e:
         logger.error(f"Unexpected error generating metadata: {e}")
         raise RuntimeError(f"Unexpected error generating metadata: {e}") from e
 
 
-# --- Quick test ---
+# ── Quick Test ───────────────────────────────────────────────────────────────
+
 async def _test():
     result = await generate_metadata_async(
         video_path="videos/meme1.mp4",
@@ -720,6 +737,8 @@ async def _test():
     )
     if result:
         print(json.dumps(result, indent=2))
+    else:
+        print("Metadata generation returned None — quota exhausted or upload failed. Check logs.")
 
 
 if __name__ == "__main__":
