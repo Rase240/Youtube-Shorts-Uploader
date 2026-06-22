@@ -127,25 +127,48 @@ class SupportingMetadata(BaseModel):
             "A concise YouTube Shorts description. "
             "Line 1 MUST be a hard-hitting hook or controversial question. "
             "Lines 2-3 should provide brief, natural-sounding context that weaves in SEO keywords. "
-            "End with EXACTLY 13 hashtags total on a single line, ordered niche-first then mainstream: "
-            "8 NICHE hashtags — specific entity/character/subject tags tied directly to this video "
-            "(e.g. #MisaAmane, #DeathNoteEdit, #GoldenRetriever, #StreetFood, #CarRestoration). "
-            "5 MAINSTREAM hashtags — broad discovery tags real high-performing videos in this category use "
-            "for top-of-funnel reach (e.g. #anime, #animeedit, #shorts, #relatable, #comedy, #fyp — "
-            "pick the 5 that genuinely fit the video's category/vibe). "
+            "End with 10 to 13 hashtags total on a single line, ordered niche-first then mainstream. "
+            "Vary the exact total and the split slightly from video to video instead of landing on the "
+            "same numbers every time. Roughly 55-65% should be NICHE hashtags — specific entity/character/"
+            "subject tags tied directly to this video "
+            "(e.g. #SpecificTopic, #NicheSubject, #TopicVariation). "
+            "The remainder should be MAINSTREAM hashtags — broad discovery tags real high-performing videos "
+            "in this category use for top-of-funnel reach (e.g. #broadcategory, #shorts, #relatable, "
+            "#trending — pick whichever genuinely fit the video's category/vibe). "
             "Never use generic AI intros like 'In this video...' or 'Welcome back...'."
+        )
+    )
+    niche_hashtag_count: int = Field(
+        ...,
+        description=(
+            "The exact number of hashtags, counting from the START of the hashtag line in `description`, "
+            "that are NICHE hashtags (before the mainstream ones begin). This MUST match how you actually "
+            "ordered the hashtag line — e.g. if the first 8 hashtags are niche and the last 5 are mainstream, "
+            "this value is 8. Used to verify the niche-first ordering and the 55-65% split programmatically."
         )
     )
     tags: list[str] = Field(
         ...,
         description=(
-            "EXACTLY 15 YouTube tags (no # symbols), ordered niche-first then mainstream: "
-            "9 NICHE tags — specific multi-word search phrases tied to the exact subjects/entities/characters "
-            "in this video (e.g. 'misa amane aesthetic', 'dog steals pizza from table', 'death note light and misa'). "
-            "6 MAINSTREAM tags — broader single-word or short-phrase category tags that real high-view videos "
-            "in this niche rank for, used purely for discovery reach (e.g. 'anime', 'anime edits', 'anime shorts', "
-            "'comedy shorts', 'funny shorts', 'relatable humor' — pick the 6 that fit this video's category). "
+            "12 to 15 YouTube tags (no # symbols), ordered niche-first then mainstream. "
+            "Vary the exact total and the split slightly from video to video instead of landing on the "
+            "same numbers every time. Roughly 55-65% should be NICHE tags — specific multi-word search "
+            "phrases tied to the exact subjects/entities/characters in this video "
+            "(e.g. 'specific topic description', 'niche action phrase', 'subject variation'). "
+            "The remainder should be MAINSTREAM tags — broader single-word or short-phrase category tags "
+            "that real high-view videos in this niche rank for, used purely for discovery reach "
+            "(e.g. 'broad category', 'category shorts', 'viral humor', 'relatable concept' "
+            "— pick whichever fit this video's category). "
             "Every tag, niche or mainstream, must be something a real person would plausibly type into YouTube search."
+        )
+    )
+    niche_tag_count: int = Field(
+        ...,
+        description=(
+            "The exact number of tags, counting from the START of the `tags` list, that are NICHE tags "
+            "(before the mainstream ones begin). This MUST match how you actually ordered the `tags` list — "
+            "e.g. if tags[0:9] are niche and tags[9:13] are mainstream, this value is 9. "
+            "Used to verify the niche-first ordering and the 55-65% split programmatically."
         )
     )
     thumbnail_recommendation: str = Field(
@@ -167,8 +190,14 @@ class SupportingMetadata(BaseModel):
     @classmethod
     def cap_tags(cls, v: list[str]) -> list[str]:
         cleaned = [t.strip("#").strip() for t in v]
-        # Upper cap of 15 tags, matching the higher-performing reference post.
-        return cleaned[:15]
+        # Hard upper cap of 15 tags — matches the top of the 12-15 target range.
+        if len(cleaned) > 15:
+            logger.warning(
+                f"[PHASE 3] Model returned {len(cleaned)} tags, truncating to 15. "
+                f"Dropped: {cleaned[15:]}"
+            )
+            return cleaned[:15]
+        return cleaned
 
 
 # --- Title Quality Gate ---
@@ -204,19 +233,68 @@ def _check_title_quality(title: str) -> Optional[str]:
     return None
 
 
-def _log_hashtag_and_tag_counts(description: str, tags: list[str]) -> None:
-    """Logs hashtag/tag counts so you can sanity-check the niche:mainstream ratio in practice.
-    Non-fatal — just visibility, since Gemini won't always hit the exact split."""
+def _log_hashtag_and_tag_counts(
+    description: str,
+    tags: list[str],
+    niche_hashtag_count: int,
+    niche_tag_count: int,
+) -> None:
+    """Logs hashtag/tag counts AND verifies the claimed niche/mainstream split against the
+    actual ordering, so the 55-65% niche ratio is checked in code instead of pure prompt-trust.
+    Non-fatal — just visibility, since Gemini won't always land inside the target range."""
     import re
     hashtags = re.findall(r"#\w+", description)
+    n_hashtags = len(hashtags)
+    n_tags = len(tags)
+
     logger.info(
-        f"[PHASE 3] Hashtag count: {len(hashtags)} (target 13) | "
-        f"Tag count: {len(tags)} (target 15, hard cap 15)"
+        f"[PHASE 3] Hashtag count: {n_hashtags} (target range 10-13) | "
+        f"Tag count: {n_tags} (target range 12-15, hard cap 15)"
     )
-    if len(hashtags) < 10 or len(hashtags) > 13:
-        logger.warning(f"[PHASE 3] Hashtag count drifted from target: got {len(hashtags)} — {hashtags}")
-    if len(tags) < 12:
-        logger.warning(f"[PHASE 3] Tag count lower than expected: got {len(tags)} — {tags}")
+    if n_hashtags < 10 or n_hashtags > 13:
+        logger.warning(f"[PHASE 3] Hashtag count outside target range: got {n_hashtags} — {hashtags}")
+    if n_tags < 12:
+        logger.warning(f"[PHASE 3] Tag count below target range: got {n_tags} — {tags}")
+
+    # Verify the niche:mainstream ratio against the model's self-reported split point,
+    # rather than just trusting the prompt instruction blindly.
+    if n_hashtags > 0:
+        # Clamp in case the model's self-reported count exceeds the actual hashtag count.
+        effective_niche_hashtag_count = min(niche_hashtag_count, n_hashtags)
+        hashtag_ratio = effective_niche_hashtag_count / n_hashtags
+        logger.info(
+            f"[PHASE 3] Hashtag niche split: {effective_niche_hashtag_count}/{n_hashtags} "
+            f"({hashtag_ratio:.0%} niche, target 55-65%)"
+        )
+        if not (0.50 <= hashtag_ratio <= 0.70):
+            logger.warning(
+                f"[PHASE 3] Hashtag niche ratio outside expected range: "
+                f"{effective_niche_hashtag_count}/{n_hashtags} = {hashtag_ratio:.0%}"
+            )
+        if niche_hashtag_count > n_hashtags:
+            logger.warning(
+                f"[PHASE 3] niche_hashtag_count ({niche_hashtag_count}) exceeds actual hashtag "
+                f"count ({n_hashtags}) — likely model inconsistency."
+            )
+
+    if n_tags > 0:
+        # Clamp in case the model's self-reported split point predates the cap_tags truncation.
+        effective_niche_tag_count = min(niche_tag_count, n_tags)
+        tag_ratio = effective_niche_tag_count / n_tags
+        logger.info(
+            f"[PHASE 3] Tag niche split: {effective_niche_tag_count}/{n_tags} "
+            f"({tag_ratio:.0%} niche, target 55-65%)"
+        )
+        if not (0.50 <= tag_ratio <= 0.70):
+            logger.warning(
+                f"[PHASE 3] Tag niche ratio outside expected range: "
+                f"{effective_niche_tag_count}/{n_tags} = {tag_ratio:.0%}"
+            )
+        if niche_tag_count > n_tags:
+            logger.warning(
+                f"[PHASE 3] niche_tag_count ({niche_tag_count}) exceeds actual tag "
+                f"count ({n_tags}) — likely due to cap_tags truncation or model inconsistency."
+            )
 
 
 def get_gemini_client() -> genai.Client:
@@ -454,24 +532,26 @@ Generate the description, tags, thumbnail recommendation, and pinned comment tha
 DESCRIPTION RULES:
 - Line 1: Punchy hook or controversial statement (NEVER "In this video..." or "Welcome back")
 - Lines 2-3: Natural context with organic SEO keywords
-- Final line: EXACTLY 13 hashtags, niche-first then mainstream:
-    * 8 NICHE hashtags tied directly to this video's specific subjects/characters/objects
-      (e.g. #MisaAmane #DeathNoteEdit #GoldenRetriever #StreetFoodVendor)
-    * 5 MAINSTREAM hashtags for broad discovery — the kind of tags real high-view videos in
-      this category actually use (e.g. #anime #animeedit #shorts #relatable #comedy #fyp #funny —
-      pick whichever 5 genuinely fit this video's category/vibe)
-- This is a NEW account, so mainstream tags are required this time for discovery reach —
-  do not skip them or replace them with more niche tags.
+- Final line: 10 to 13 hashtags total, niche-first then mainstream. Vary the exact count and the split
+  slightly from video to video instead of always landing on the same numbers — roughly 55-65% should be
+  NICHE hashtags tied directly to this video's specific subjects/characters/objects
+  (e.g. #SpecificTopic #NicheSubject #TopicVariation), and the remainder MAINSTREAM
+  hashtags for broad discovery — the kind of tags real high-view videos in this category actually use
+  (e.g. #broadcategory #shorts #relatable #trending — pick whichever genuinely fit this
+  video's category/vibe).
+- This is a NEW account, so mainstream hashtags are required this time for discovery reach —
+  do not skip them or replace them all with niche tags.
 
 TAG RULES (the "Tags" field, separate from hashtags):
-- EXACTLY 15 tags total, niche-first then mainstream:
-    * 9 NICHE tags — specific multi-word phrases tied to exact subjects: {', '.join(analysis['subject_entities'])}
-      (e.g. "misa amane aesthetic", "dog steals pizza from table")
-    * 6 MAINSTREAM tags — broader category/discovery tags real viral videos in this niche rank for
-      (e.g. "anime", "anime edits", "anime shorts", "comedy shorts", "funny shorts", "relatable humor" —
-      pick the 6 that best fit this video's category)
+- 12 to 15 tags total, niche-first then mainstream. Vary the exact count and the split slightly from
+  video to video instead of always landing on the same numbers — roughly 55-65% should be NICHE tags,
+  specific multi-word phrases tied to exact subjects: {', '.join(analysis['subject_entities'])}
+  (e.g. "specific topic description", "niche action phrase"), and the remainder MAINSTREAM tags —
+  broader category/discovery tags real viral videos in this niche rank for (e.g. "broad category",
+  "category shorts", "viral humor", "relatable concept" — pick whichever best fit this
+  video's category).
 - Think "what would someone type into YouTube search to find content LIKE this?" for the mainstream
-  half, and "what would someone type to find THIS EXACT video?" for the niche half.
+  portion, and "what would someone type to find THIS EXACT video?" for the niche portion.
 
 PINNED COMMENT: Short, opinionated question that FORCES replies. Under 15 words.
 THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
@@ -488,7 +568,12 @@ THUMBNAIL: Identify the most dramatic frame with a specific timestamp."""
                     )
                     if metadata:
                         logger.info(f"[PHASE 3] Metadata complete. Tags: {metadata.get('tags', [])[:5]}...")
-                        _log_hashtag_and_tag_counts(metadata.get("description", ""), metadata.get("tags", []))
+                        _log_hashtag_and_tag_counts(
+                            metadata.get("description", ""),
+                            metadata.get("tags", []),
+                            metadata.get("niche_hashtag_count", 0),
+                            metadata.get("niche_tag_count", 0),
+                        )
                         break
                 except Exception as e:
                     logger.warning(f"[PHASE 3] {model} failed: {e}")
