@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from metadata import generate_metadata_async
-from uploader import UploadConfig, upload_video, DEFAULT_PRIVACY
+from uploader import UploadConfig, upload_video, DEFAULT_PRIVACY, DEFAULT_NOTIFY
 from drive import download_video
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class Job:
     default_privacy: str = DEFAULT_PRIVACY
     force_normal: bool = False
     acc_id: Optional[str] = None
+    notify_subscribers: bool = DEFAULT_NOTIFY
 
     def __post_init__(self):
         from uploader import GENRE_CATEGORY_MAP
@@ -118,6 +119,7 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
                 genre=job.genre,
                 default_privacy=job.default_privacy,
                 acc_id=job.acc_id,
+                notify_subscribers=job.notify_subscribers,
             )
 
             video_id = await upload_video(config)

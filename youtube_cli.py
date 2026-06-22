@@ -116,15 +116,23 @@ async def handle_upload(args):
             sys.exit(1)
 
     from scheduler import Job, process_job
-    job = Job(
-        vibe=args.vibe,
-        drive_url=args.drive_url,
-        video_path=video_path,
-        genre=args.genre,
-        default_privacy=args.privacy,
-        force_normal=args.force_normal,
-        acc_id=args.acc
-    )
+    notify_val = None
+    if getattr(args, 'notify', None) is not None:
+        notify_val = args.notify.lower() in ('true', '1', 'yes')
+
+    job_kwargs = {
+        "vibe": args.vibe,
+        "drive_url": args.drive_url,
+        "video_path": video_path,
+        "genre": args.genre,
+        "default_privacy": args.privacy,
+        "force_normal": args.force_normal,
+        "acc_id": args.acc
+    }
+    if notify_val is not None:
+        job_kwargs["notify_subscribers"] = notify_val
+
+    job = Job(**job_kwargs)
     
     try:
         semaphore = asyncio.Semaphore(1)
@@ -285,6 +293,7 @@ async def main():
     upload_parser.add_argument('--genre', default='comedy', help="Genre for YouTube category")
     upload_parser.add_argument('--privacy', default='public', choices=['public', 'private', 'unlisted'], help="Privacy status")
     upload_parser.add_argument('--force_normal', action='store_true', help="Force upload as normal video without padding")
+    upload_parser.add_argument('--notify', default=None, choices=['true', 'false'], help="Notify subscribers")
 
     # list subcommand
     list_parser = subparsers.add_parser("list", parents=[common], help="List uploaded videos")

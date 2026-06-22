@@ -14,6 +14,7 @@ async def main():
     parser.add_argument('--genre', default='comedy', help="Genre for YouTube category")
     parser.add_argument('--privacy', default='public', help="Privacy status (public, private, unlisted)")
     parser.add_argument('--force_normal', action='store_true', help="Force upload as normal video without padding")
+    parser.add_argument('--notify', default=None, choices=['true', 'false'], help="Notify subscribers")
 
     args = parser.parse_args()
 
@@ -36,14 +37,22 @@ async def main():
                 os.remove(video_path)
             sys.exit(1)
 
-    job = Job(
-        vibe=args.vibe,
-        drive_url=args.drive_url,
-        video_path=video_path,
-        genre=args.genre,
-        default_privacy=args.privacy,
-        force_normal=args.force_normal
-    )
+    notify_val = None
+    if getattr(args, 'notify', None) is not None:
+        notify_val = args.notify.lower() in ('true', '1', 'yes')
+
+    job_kwargs = {
+        "vibe": args.vibe,
+        "drive_url": args.drive_url,
+        "video_path": video_path,
+        "genre": args.genre,
+        "default_privacy": args.privacy,
+        "force_normal": args.force_normal
+    }
+    if notify_val is not None:
+        job_kwargs["notify_subscribers"] = notify_val
+
+    job = Job(**job_kwargs)
     
     try:
         semaphore = asyncio.Semaphore(1)

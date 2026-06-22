@@ -17,6 +17,7 @@ from auth import get_credentials
 from account_manager import get_token_file_for_account
 
 DEFAULT_PRIVACY = os.getenv("DEFAULT_PRIVACY", "public")
+DEFAULT_NOTIFY = os.getenv("DEFAULT_NOTIFY_SUBSCRIBERS", "true").lower() in ("true", "1", "yes")
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
@@ -42,6 +43,7 @@ class UploadConfig(BaseModel):
     tags: list[str]
     genre: str = "default"
     default_privacy: str = DEFAULT_PRIVACY
+    notify_subscribers: bool = DEFAULT_NOTIFY
     made_for_kids: bool = False
     acc_id: Optional[str] = None
 
@@ -92,7 +94,8 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
         request = youtube.videos().insert(
             part="snippet,status",
             body=body,
-            media_body=media
+            media_body=media,
+            notifySubscribers=config.notify_subscribers
         )
 
         # Resumable upload with progress
