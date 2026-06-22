@@ -41,11 +41,14 @@ logger = logging.getLogger(__name__)
 # ── Custom Exceptions ────────────────────────────────────────────────────────
 
 class QuotaExhaustedError(RuntimeError):
-    """Raised when Gemini quota is exhausted after all retries.
+    """Raised when Gemini quota is exhausted after all retries on a given model.
 
-    Unlike transient UNAVAILABLE errors, switching models won't help here —
-    both use the same API key and the same account-level quota. The caller
-    should queue the video for later rather than crashing or hammering the API.
+    NOTE: quota on the Gemini Developer API free tier is tracked per-model, not
+    per-account. Hitting RESOURCE_EXHAUSTED on one model says nothing about the
+    remaining quota on another model — they're separate buckets. Callers should
+    treat this as "this specific model is tapped out", try the next model in
+    the fallback chain, and only treat the situation as "queue for later" once
+    every model in the chain has been exhausted.
     """
     pass
 
@@ -356,7 +359,7 @@ async def _call_gemini(
                     temperature=temperature,
                 ),
             )
-            
+
             # 🚀 The SDK handles all the JSON parsing and validation natively
             if response.parsed:
                 return response.parsed.model_dump()
@@ -381,9 +384,10 @@ async def _call_gemini(
             elif is_quota:
                 logger.error(
                     f"[GEMINI] Quota exhausted on {model} after {max_attempts} attempts. "
-                    f"Daily limit likely hit — skipping this video."
+                    f"This model's daily limit is likely hit — caller should fall back to "
+                    f"another model rather than skip the video outright."
                 )
-                raise QuotaExhaustedError(f"Gemini quota exhausted after {max_attempts} retries: {e}") from e
+                raise QuotaExhaustedError(f"Gemini quota exhausted on {model} after {max_attempts} retries: {e}") from e
 
             else:
                 raise
@@ -416,6 +420,13 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
     """
     client = get_gemini_client()
     video_file = None
+
+    # Gemini's free-tier quota is tracked per-model, not per-account, so exhausting
+    # gemini-3.5-flash says nothing about gemini-3.1-flash-lite's remaining quota.
+    # Every phase below tries each model in order and only treats the situation as
+    # "fully exhausted, queue this video for later" once every model in this list
+    # has individually hit RESOURCE_EXHAUSTED.
+    _FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
     logger.info(f"[GEMINI] Uploading video: {video_path}")
     try:
@@ -458,7 +469,8 @@ Focus on:
 Be specific and visual. Reference exact moments in the video."""
 
             analysis = None
-            for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
+            quota_exhausted_models = 0
+            for model in _FALLBACK_MODELS:
                 try:
                     analysis = await _call_gemini(
                         client, model,
@@ -473,12 +485,16 @@ Be specific and visual. Reference exact moments in the video."""
                         logger.info(f"[PHASE 1] Title seeds: {analysis.get('title_setups', [])}")
                         break
                 except QuotaExhaustedError:
-                    raise  # account-level — no point trying the next model
+                    logger.warning(f"[PHASE 1] {model} quota exhausted — falling back to next model...")
+                    quota_exhausted_models += 1
+                    continue
                 except Exception as e:
                     logger.warning(f"[PHASE 1] {model} failed: {e}")
                     continue
 
             if not analysis:
+                if quota_exhausted_models == len(_FALLBACK_MODELS):
+                    raise QuotaExhaustedError("All models exhausted their quota in Phase 1 (video analysis).")
                 raise RuntimeError("Phase 1 (video analysis) failed on all models.")
 
             # ════════════════════ PHASE 2: TITLE GENERATION ════════════════════
@@ -539,8 +555,10 @@ The best title is usually the most specific and the most incomplete."""
 
             best_title = None
             last_title_data = None  # kept for quality-gate fallback
+            quota_exhausted_models = 0
 
-            for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
+            for model in _FALLBACK_MODELS:
+                model_quota_exhausted = False
                 for attempt in range(3):
                     try:
                         title_data = await _call_gemini(
@@ -578,11 +596,15 @@ The best title is usually the most specific and the most incomplete."""
                                 break
 
                     except QuotaExhaustedError:
-                        raise
+                        logger.warning(f"[PHASE 2] {model} quota exhausted — falling back to next model...")
+                        model_quota_exhausted = True
+                        break  # leave the attempt loop, move to the next model
                     except Exception as e:
                         logger.warning(f"[PHASE 2] {model} completely failed: {e}")
                         break  # _call_gemini exhausted its retries — try next model
 
+                if model_quota_exhausted:
+                    quota_exhausted_models += 1
                 if best_title:
                     break
 
@@ -599,6 +621,8 @@ The best title is usually the most specific and the most incomplete."""
                     best_title = fallback
 
             if not best_title:
+                if quota_exhausted_models == len(_FALLBACK_MODELS):
+                    raise QuotaExhaustedError("All models exhausted their quota in Phase 2 (title generation).")
                 raise RuntimeError("Phase 2 (title generation) failed to produce any title.")
 
             # ════════════════════ PHASE 3: SUPPORTING METADATA ════════════════════
@@ -661,7 +685,8 @@ Sound like a nosy person stirring something, not a survey.
 THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max CTR."""
 
             metadata = None
-            for model in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
+            quota_exhausted_models = 0
+            for model in _FALLBACK_MODELS:
                 try:
                     metadata = await _call_gemini(
                         client, model,
@@ -681,12 +706,16 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
                         )
                         break
                 except QuotaExhaustedError:
-                    raise
+                    logger.warning(f"[PHASE 3] {model} quota exhausted — falling back to next model...")
+                    quota_exhausted_models += 1
+                    continue
                 except Exception as e:
                     logger.warning(f"[PHASE 3] {model} failed: {e}")
                     continue
 
             if not metadata:
+                if quota_exhausted_models == len(_FALLBACK_MODELS):
+                    raise QuotaExhaustedError("All models exhausted their quota in Phase 3 (supporting metadata).")
                 raise RuntimeError("Phase 3 (supporting metadata) failed on all models.")
 
             final_result = {
@@ -713,8 +742,11 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
 
     except QuotaExhaustedError as e:
         # Return None so the caller can queue this video for later rather than crashing.
+        # By the time we get here, every model in _FALLBACK_MODELS has been tried and
+        # exhausted its own quota — this is a real "come back later" situation, not
+        # just one model having a bad day.
         logger.error(
-            f"[QUOTA] Gemini quota exhausted — skipping '{video_path}'. "
+            f"[QUOTA] All fallback models exhausted their Gemini quota — skipping '{video_path}'. "
             f"Queue for retry when quota resets. Error: {e}"
         )
         return None
