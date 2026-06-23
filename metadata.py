@@ -55,7 +55,7 @@ class QuotaExhaustedError(RuntimeError):
 
 # ── Pydantic Schemas ─────────────────────────────────────────────────────────
 
-class VideoAnalysis(BaseModel):
+class VideoDNA(BaseModel):
     """Phase 1 output: Deep analysis of the video content."""
     key_moment: str = Field(
         ...,
@@ -93,28 +93,49 @@ class VideoAnalysis(BaseModel):
             "These will be used for SEO tags later."
         )
     )
-    title_setups: list[str] = Field(
+    click_triggers: list[str] = Field(
         ...,
         description=(
-            "Generate exactly 3 raw title-seed observations — the most specific, concrete things "
-            "you noticed that a title writer can build from. Each should be a brief, visual observation "
-            "(NOT a polished title), e.g.: 'the cat slowly turns its head right before the noise hits' "
-            "or 'the person's expression goes from confident to pure panic in under one second'. "
-            "Focus on the single most shareable moment and what makes it funny/shocking/relatable. "
-            "Be hyper-specific and visual — the more granular, the more useful for the title writer."
+            "Generate exactly 3 title seeds. "
+            "Each seed must be: one specific moment, visually observable, "
+            "impossible to understand without seeing the clip, and useful for creating curiosity. "
+            "The trigger should feel like missing context, making a reader think: 'wait... why?'. "
+            "Bad: 'dog barks at fridge'. Good: 'the dog freezes every time this drawer opens'. "
+            "Bad: 'person gets surprised'. Good: 'he keeps checking under the couch for something'."
         )
     )
 
 
-class TitleCandidates(BaseModel):
+class TitleStudio(BaseModel):
     """Phase 2 output: Multiple title options ranked by quality."""
     candidates: list[str] = Field(
         ...,
         description=(
-            "Generate exactly 5 unique title candidates for this YouTube Short. "
-            "Each must be under 55 characters, lowercase Gen-Z voice, and use different hook techniques "
-            "(curiosity gap, relatable scenario, pattern interrupt, bold claim, emotional reaction). "
-            "NO emojis unless they genuinely add to the vibe — most titles work better without them."
+            "Generate exactly 5 titles. "
+            "Imagine you watched this clip and immediately sent it to a friend. "
+            "What would you type when sending this clip to one friend? That's the title. "
+            "Pretend your friend can only see the title and a thumbnail. "
+            "The title's job is to make them ask for the missing context. "
+            "All 5 titles MUST feel meaningfully different (written by five different people, not simply rewording the same idea). "
+            "Each title must write from a different perspective: "
+            "1. someone confused by the clip "
+            "2. someone who sees themselves in the situation "
+            "3. someone who noticed a weird detail "
+            "4. someone worried about what happens next "
+            "5. someone disagreeing with what's happening. "
+            "Capitalization should feel natural. Sentence case, lowercase, fragments, and inconsistent capitalization "
+            "are all acceptable if they fit the clip. "
+            "Bad titles: explain, summarize, advertise, use generic templates, or could belong to another video. "
+            "Avoid defaulting to reaction memes, Twitter captions, or Reddit-style comments (e.g., 'bro really said', 'nah because why', 'i'm crying 😭'). "
+            "Prefer describing a specific thing that happened in the clip. "
+            "For each candidate, privately run this self-critique rubric: "
+            "1. Could this fit 1000 other videos? "
+            "2. Does it reveal the ending? "
+            "3. Does it sound like marketing? "
+            "4. Does it mention a specific visual detail? "
+            "5. Would I genuinely click this? "
+            "6. If replacing one noun makes the title fit another video, is it too generic? "
+            "Discard any candidate that fails. If it sounds like it came from an AI title generator, discard it immediately."
         )
     )
     ranking_reasoning: str = Field(
@@ -143,27 +164,32 @@ class TitleCandidates(BaseModel):
         return v
 
 
-class SupportingMetadata(BaseModel):
+class PublishingPackage(BaseModel):
     """Phase 3 output: Description, tags, and engagement metadata."""
     description: str = Field(
         ...,
         description=(
-            "A concise YouTube Shorts description. "
-            "Line 1 MUST be a hard-hitting hook or controversial question. "
-            "Lines 2-3 should provide brief, natural-sounding context that weaves in SEO keywords. "
+            "A casual, specific YouTube Shorts description. "
+            "Write the description the way someone would caption this clip after posting it (e.g. an observation, opinion, reaction, extra context, mini-story, or deadpan statement — do not default to questions). "
+            "The description should feel like the second thing someone says after showing a friend the clip (the next sentence in the conversation). "
+            "It should feel like it was typed in under 10 seconds; fragments, lowercase, and incomplete thoughts are acceptable. "
+            "The description's job is to reward curiosity created by the title by adding exactly one new piece of information without restating the title, explaining everything, or solving the mystery. "
             "End with 10 to 13 hashtags total on a single line, ordered niche-first then mainstream. "
-            "Vary the exact total and the split slightly from video to video instead of landing on the "
-            "same numbers every time. Roughly 55-65% should be NICHE hashtags — specific entity/character/"
-            "subject tags tied directly to this video "
-            "(e.g. #SpecificTopic, #NicheSubject, #TopicVariation). "
-            "The remainder should be MAINSTREAM hashtags — broad discovery tags real high-performing videos "
-            "in this category use for top-of-funnel reach (e.g. #broadcategory, #shorts, #relatable, "
-            "#trending — pick whichever genuinely fit the video's category/vibe). "
-            "Never use generic AI intros like 'In this video...' or 'Welcome back...'."
+            "Generate hashtags prioritizing: exact subjects in the video -> exact category of content -> broad discovery hashtags. "
+            "If removing a hashtag would not improve discoverability, do not include it (avoid filler like #omg, #cool, #lol, #awesome). "
+            "Never use phrasing like 'this clip', 'this video', 'this one', 'caught on camera', generic AI intros, or generic engagement questions. "
+            "Before returning the description, privately run this self-critique rubric: "
+            "1. Did I restate the title? "
+            "2. Did I solve the mystery? "
+            "3. Does this sound like a YouTube template? "
+            "4. Would a real person type this? "
+            "5. Did I add exactly one new piece of information? "
+            "If it could be copied onto another upload with minimal changes, reject it."
         )
     )
     niche_hashtag_count: int = Field(
         ...,
+        ge=0,
         description=(
             "The exact number of hashtags, counting from the START of the hashtag line in `description`, "
             "that are NICHE hashtags (before the mainstream ones begin). This MUST match how you actually "
@@ -175,19 +201,21 @@ class SupportingMetadata(BaseModel):
         ...,
         description=(
             "12 to 15 YouTube tags (no # symbols), ordered niche-first then mainstream. "
-            "Vary the exact total and the split slightly from video to video instead of landing on the "
-            "same numbers every time. Roughly 55-65% should be NICHE tags — specific multi-word search "
-            "phrases tied to the exact subjects/entities/characters in this video "
-            "(e.g. 'specific topic description', 'niche action phrase', 'subject variation'). "
-            "The remainder should be MAINSTREAM tags — broader single-word or short-phrase category tags "
-            "that real high-view videos in this niche rank for, used purely for discovery reach "
-            "(e.g. 'broad category', 'category shorts', 'viral humor', 'relatable concept' "
-            "— pick whichever fit this video's category). "
-            "Every tag, niche or mainstream, must be something a real person would plausibly type into YouTube search."
+            "Generate tags from search intents prioritized in this order: "
+            "1. Exact scenario, "
+            "2. Exact action, "
+            "3. Exact subject, "
+            "4. Broader category, "
+            "5. Adjacent interests. "
+            "Prefer real search phrases over keywords (e.g. 'dog afraid of microwave' instead of 'dog' or 'funny'). "
+            "Every tag must be something a real person would type into search (if you would be surprised to see the phrase in YouTube autocomplete, discard it). "
+            "Avoid tags that sound like metadata (e.g. 'funny canine interaction', 'unexpected response'). "
+            "If it could be copied onto another upload with minimal changes, reject it."
         )
     )
     niche_tag_count: int = Field(
         ...,
+        ge=0,
         description=(
             "The exact number of tags, counting from the START of the `tags` list, that are NICHE tags "
             "(before the mainstream ones begin). This MUST match how you actually ordered the `tags` list — "
@@ -212,13 +240,21 @@ class SupportingMetadata(BaseModel):
 
     @field_validator("tags")
     def cap_tags(cls, v: list[str]) -> list[str]:
-        cleaned = [t.strip("#").strip() for t in v]
+        cleaned = list(dict.fromkeys(
+            t.strip("#").strip()
+            for t in v
+            if t.strip("#").strip()
+        ))
         if len(cleaned) > 15:
             logger.warning(
                 f"[PHASE 3] Model returned {len(cleaned)} tags, truncating to 15. "
                 f"Dropped: {cleaned[15:]}"
             )
-            return cleaned[:15]
+            cleaned = cleaned[:15]
+        if len(cleaned) < 12:
+            logger.warning(
+                f"[PHASE 3] Model returned only {len(cleaned)} tags, below target range 12-15: {cleaned}"
+            )
         return cleaned
 
 
@@ -284,10 +320,10 @@ def _check_title_quality(title: str) -> Optional[str]:
     # - Start from words[1:] — a leading capital is normal in a sentence.
     # - Only count words > 2 chars to avoid flagging "I", "TV", initialisms, etc.
     words = title.split()
-    if len(words) >= 5:
+    if len(words) >= 6:
         capitalized = sum(1 for w in words[1:] if len(w) > 2 and w[0].isupper())
         if capitalized / (len(words) - 1) > 0.75:
-            return "Title looks too formally capitalized (not Gen-Z voice)"
+            return "Title looks too formally capitalized (sounds composed, not posted)"
 
     return None
 
@@ -299,7 +335,9 @@ def _log_hashtag_and_tag_counts(
     niche_tag_count: int,
 ) -> None:
     """Logs hashtag/tag counts and verifies niche/mainstream split. Non-fatal."""
-    hashtags = re.findall(r"#\w+", description)
+    lines = description.strip().splitlines()
+    last_line = lines[-1] if lines else ""
+    hashtags = re.findall(r"#\w+", last_line)
     n_hashtags = len(hashtags)
     n_tags = len(tags)
 
@@ -361,7 +399,7 @@ async def _call_gemini(
             )
 
             # 🚀 The SDK handles all the JSON parsing and validation natively
-            if response.parsed:
+            if response.parsed is not None:
                 return response.parsed.model_dump()
             else:
                 logger.warning(f"[GEMINI] Empty or unparseable response from {model} on attempt {attempt + 1}/{max_attempts}.")
@@ -427,6 +465,7 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
     # "fully exhausted, queue this video for later" once every model in this list
     # has individually hit RESOURCE_EXHAUSTED.
     _FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
+    logger.info(f"Gemini fallback model chain: {_FALLBACK_MODELS}")
 
     logger.info(f"[GEMINI] Uploading video: {video_path}")
     try:
@@ -435,6 +474,7 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
 
         try:
             max_polls = 60
+            video_file_info = None
             for _ in range(max_polls):
                 video_file_info = await client.aio.files.get(name=video_file.name)
                 if video_file_info.state == "ACTIVE":
@@ -462,9 +502,16 @@ Focus on:
 - Why someone would send this to a friend
 - The core irresistible hook that makes it impossible to scroll past
 - Specific subjects/entities visible in the video (for SEO)
-- 3 raw title-seed observations — the most specific, granular things you noticed
-  that could be the kernel of a great title. NOT polished titles — raw observations.
-  Think: "what's the one-second thing you'd describe to a friend to explain why you sent them this?"
+- Exactly 3 title seeds (click triggers). Each seed must be:
+  • one specific moment
+  • visually observable
+  • impossible to understand without seeing the clip
+  • useful for creating curiosity (the trigger should feel like missing context, making the reader think "wait... why?")
+  
+  Bad: dog barks at fridge
+  Good: the dog freezes every time this drawer opens
+  Bad: person gets surprised
+  Good: he keeps checking under the couch for something
 
 Be specific and visual. Reference exact moments in the video."""
 
@@ -475,21 +522,21 @@ Be specific and visual. Reference exact moments in the video."""
                     analysis = await _call_gemini(
                         client, model,
                         contents=[video_file],
-                        schema=VideoAnalysis,
+                        schema=VideoDNA,
                         max_tokens=1500,
                         temperature=0.7,
                         sys_instruct=phase1_prompt,
                     )
                     if analysis:
                         logger.info(f"[PHASE 1] Done. Core hook: {analysis.get('core_hook', 'N/A')}")
-                        logger.info(f"[PHASE 1] Title seeds: {analysis.get('title_setups', [])}")
+                        logger.info(f"[PHASE 1] Title seeds: {analysis.get('click_triggers', [])}")
                         break
                 except QuotaExhaustedError:
                     logger.warning(f"[PHASE 1] {model} quota exhausted — falling back to next model...")
                     quota_exhausted_models += 1
                     continue
                 except Exception as e:
-                    logger.warning(f"[PHASE 1] {model} failed: {e}")
+                    logger.warning(f"[PHASE 1] {model} failed: {e}", exc_info=True)
                     continue
 
             if not analysis:
@@ -504,24 +551,94 @@ Be specific and visual. Reference exact moments in the video."""
             # Removed "incomplete comparison" (produces fragment garbage like "funnier than—")
             # and "deadpan label" (produces corporate-speak like "individual disrupts equilibrium").
             # Both fail because they're abstract methods that don't anchor to specific content.
-            _ALL_TECHNIQUES = [
-                "curiosity gap: name the exact setup visible in the video, withhold the outcome entirely — the viewer must watch to find out what happens",
-                "accusation/callout: address someone actually visible in the video as if catching them in the act, naming their specific action",
-                "understatement: describe the most extreme visible moment using the flattest, most casual language possible — make big feel small",
-                "reaction fragment: write the exact first thing you'd text a friend right after watching this specific clip, grounded in what actually happens on screen",
-                "specific detail anchor: lead with one hyper-specific visual detail from the video that's weird or funny out of context — nothing else, no explanation",
-                "false confidence: make a bold, specific claim about someone or something actually visible in this video that a viewer will immediately want to verify or argue with",
-                "second-person drop-in: put the viewer directly into the exact situation shown — use 'you' for the specific thing that happens in this video",
-                "scene contrast: name two things happening simultaneously in this video that shouldn't go together — leave it unresolved, let the absurdity do the work",
-                "peak expression: describe someone's face/body language/reaction at the exact peak moment in the most specific visual terms possible",
+            _TITLE_PERSPECTIVES = [
+                "someone confused by the clip",
+                "someone who sees themselves in the situation",
+                "someone who noticed a weird detail",
+                "someone worried about what happens next",
+                "someone disagreeing with what's happening",
             ]
-            chosen_techniques = random.sample(_ALL_TECHNIQUES, 5)
-            techniques_block = "\n".join(f"- {t}" for t in chosen_techniques)
-            seeds_block = "\n".join(f"  • {s}" for s in analysis.get("title_setups", []))
+            perspectives_block = "\n".join(f"- {p}" for p in _TITLE_PERSPECTIVES)
+            seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
 
-            phase2_prompt = f"""You are writing ONE YouTube Shorts title. Watch this video carefully.
+            phase2_prompt = f"""Imagine you watched this clip and immediately sent it to a friend.
+
+What would you type when sending this clip to one friend? That's the title.
+
+Pretend your friend can only see the title and a thumbnail.
+The title's job is to make them ask for the missing context.
+
+Do not optimize. Do not advertise. Do not summarize. Just make someone need to click.
+
+---
+
+Guiding principle:
+
+The more specific the setup,
+and the less complete the explanation,
+the stronger the title usually is.
+
+Titles should feel discovered, not manufactured.
+
+The viewer should think:
+"why did that happen?"
+"What am I missing?"
+"there's definitely context here."
+
+Never answer those questions in the title.
+
+---
+
+Examples of GOOD titles:
+- the dog looked at him for way too long
+- bro brought a ladder for this
+- nobody noticed the kid in the background
+- he keeps checking the same drawer
+- the cashier's face at the end 😭
+
+Why they're good:
+- specific
+- incomplete
+- imply a story
+- could only belong to one kind of clip
+
+Examples of BAD titles:
+- you won't believe what happened
+- funniest video ever
+- this is so satisfying
+- wait for it
+- watch until the end
+- incredible moment caught on camera
+
+Bad titles:
+- explain
+- summarize
+- advertise
+- use generic templates
+- could belong to another video
+
+Reject anything that does these things.
+
+Avoid defaulting to reaction memes, Twitter captions, or Reddit-style comments (e.g., "bro really said", "nah because why", "i'm crying 😭"). Prefer describing a specific thing that happened in the clip.
+
+---
+
+All 5 titles MUST feel meaningfully different.
+A reader should believe they were written by five different people.
+Do not simply reword the same idea.
+
+For each candidate, privately run this self-critique rubric and discard any that fail:
+1. Could this fit 1000 other videos? (If yes, discard)
+2. Does it reveal the ending? (If yes, discard)
+3. Does it sound like marketing? (If yes, discard)
+4. Does it mention a specific visual detail? (If no, discard)
+5. Would I genuinely click this? (If no, discard)
+6. Does it sound like it came from an AI title generator? (If yes, discard immediately)
+7. If replacing one noun makes the title fit another video, is it too generic? (If yes, discard. e.g., "the dog did something weird" -> "the cat did something weird" still works. Whereas "the dog freezes every time the microwave beeps" falls apart if you swap nouns.)
+
+---
+
 Everything in this title must come from what's actually visible in THIS specific video.
-There is no house style to fall back on — every word has to be earned by the content.
 
 VIDEO ANALYSIS:
 KEY MOMENT: {analysis['key_moment']}
@@ -533,10 +650,8 @@ SUBJECTS: {', '.join(analysis['subject_entities'])}
 RAW TITLE SEEDS (specific observations from the analyst — use these as your starting material):
 {seeds_block}
 
-Apply each technique below to the SPECIFIC content in this video. Ground every title in a real
-moment or detail that's actually visible. Do not write a generic version of the technique:
-
-{techniques_block}
+For each of the 5 candidate titles, write from one of the following natural human perspectives/reactions:
+{perspectives_block}
 
 THE ONLY RULE THAT MATTERS: a title must CREATE a gap, not CLOSE one.
 If a viewer reads it and already knows how the video ends — you've failed.
@@ -544,67 +659,94 @@ State the SETUP only. The outcome, punchline, and twist must not appear in the t
 
 ALL OTHER RULES (every candidate must satisfy all of these):
 - Under 55 characters — hard limit, mobile truncates here
-- Lowercase throughout — sounds like something typed in 4 seconds, not composed
+- Capitalization should feel natural. Sentence case, lowercase, fragments, and inconsistent capitalization are all acceptable if they fit the clip.
 - No emotional labels ("hilarious", "wholesome", "satisfying") — show the thing, not the feeling
 - No narration ("watch as", "this video shows", "the moment when") — drop the viewer in directly
 - No emojis unless one specific emoji is doing real comedic work (most titles don't need one)
 - Fragments, slightly wrong grammar, weird specificity — all acceptable, all real
 
-After writing all 5, rank by which creates the STRONGEST unresolved question.
-The best title is usually the most specific and the most incomplete."""
+Rank titles by this priority:
+1. Specificity
+2. Curiosity gap
+3. Visual imagery
+4. Emotional reaction
+5. Brevity
+
+The first criterion dominates all others.
+A highly specific title should beat a clever but generic title every time.
+
+Do not rush.
+Think of at least 10 possible titles privately.
+Keep only the strongest 5.
+
+The title should feel like a sentence that escaped from the middle of a conversation.
+
+Examples:
+✅
+- the dog won't go near that hallway anymore
+- he kept looking behind the vending machine
+- nobody reacted when the alarm went off
+
+❌
+- funniest dog ever
+- wait until the end
+- crazy moment caught on camera
+
+When in doubt: mention a strange detail, leave out the explanation, and trust the viewer's curiosity."""
 
             best_title = None
             last_title_data = None  # kept for quality-gate fallback
             quota_exhausted_models = 0
 
             for model in _FALLBACK_MODELS:
-                model_quota_exhausted = False
-                for attempt in range(3):
-                    try:
-                        title_data = await _call_gemini(
-                            client, model,
-                            contents=[video_file],
-                            schema=TitleCandidates,
-                            max_tokens=2000,
-                            temperature=1.0,
-                            sys_instruct=phase2_prompt,
-                            max_attempts=3,
-                        )
-                        if title_data:
-                            last_title_data = title_data
-                            candidate = title_data.get("best_title", "")
-                            quality_issue = _check_title_quality(candidate)
+                try:
+                    title_data = await _call_gemini(
+                        client, model,
+                        contents=[video_file],
+                        schema=TitleStudio,
+                        max_tokens=2000,
+                        temperature=1.0,
+                        sys_instruct=phase2_prompt,
+                        max_attempts=3,
+                    )
+                    if title_data:
+                        last_title_data = title_data
+                        candidate = title_data.get("best_title", "")
+                        quality_issue = _check_title_quality(candidate)
+                        initial_candidate = candidate
+                        initial_issue = quality_issue
 
-                            if quality_issue:
-                                logger.warning(
-                                    f"[PHASE 2] best_title rejected ({model}, attempt {attempt + 1}/3): "
-                                    f"{quality_issue} — '{candidate}'"
-                                )
-                                # Scan alternates before re-prompting
-                                for alt in title_data.get("candidates", []):
-                                    if alt != candidate and not _check_title_quality(alt):
-                                        candidate = alt
-                                        quality_issue = None
-                                        logger.info(f"[PHASE 2] Using alternate candidate: '{candidate}'")
-                                        break
+                        if quality_issue:
+                            # Scan alternates before re-prompting or moving to next model
+                            for alt in title_data.get("candidates", []):
+                                if alt != candidate and not _check_title_quality(alt):
+                                    candidate = alt
+                                    quality_issue = None
+                                    break
 
-                            if not quality_issue:
-                                best_title = candidate
-                                logger.info(f"[PHASE 2] Winning title: '{best_title}'")
-                                logger.info(f"[PHASE 2] All candidates: {title_data.get('candidates', [])}")
-                                logger.info(f"[PHASE 2] Reasoning: {title_data.get('ranking_reasoning', 'N/A')}")
-                                break
+                        if not quality_issue:
+                            best_title = candidate
+                            logger.info(f"[PHASE 2] Candidates: {title_data.get('candidates', [])}")
+                            logger.info(f"[PHASE 2] Winner: {best_title}")
+                            if initial_issue:
+                                logger.info(f"[PHASE 2] Rejected: '{initial_candidate}' (Reason: {initial_issue})")
+                            logger.info(f"[PHASE 2] Reasoning: {title_data.get('ranking_reasoning', 'N/A')}")
+                            break
+                        else:
+                            logger.warning(
+                                f"[PHASE 2] {model} candidates failed quality checks. "
+                                f"Candidates: {title_data.get('candidates', [])}. "
+                                f"Rejected best_title: '{initial_candidate}' (Reason: {initial_issue})"
+                            )
 
-                    except QuotaExhaustedError:
-                        logger.warning(f"[PHASE 2] {model} quota exhausted — falling back to next model...")
-                        model_quota_exhausted = True
-                        break  # leave the attempt loop, move to the next model
-                    except Exception as e:
-                        logger.warning(f"[PHASE 2] {model} completely failed: {e}")
-                        break  # _call_gemini exhausted its retries — try next model
-
-                if model_quota_exhausted:
+                except QuotaExhaustedError:
+                    logger.warning(f"[PHASE 2] {model} quota exhausted — falling back to next model...")
                     quota_exhausted_models += 1
+                    continue
+                except Exception as e:
+                    logger.warning(f"[PHASE 2] {model} failed: {e}", exc_info=True)
+                    continue
+
                 if best_title:
                     break
 
@@ -614,11 +756,13 @@ The best title is usually the most specific and the most incomplete."""
             if not best_title and last_title_data:
                 fallback = last_title_data.get("best_title", "")
                 if fallback:
-                    logger.warning(
-                        f"[PHASE 2] All quality checks failed — using raw best_title as fallback: '{fallback}'. "
-                        f"Check logs to tune quality gate or prompts."
-                    )
                     best_title = fallback
+                    logger.warning(
+                        f"[PHASE 2] All quality checks failed — using raw best_title as fallback: '{fallback}'"
+                    )
+                    logger.info(f"[PHASE 2] Candidates: {last_title_data.get('candidates', [])}")
+                    logger.info(f"[PHASE 2] Winner: {best_title}")
+                    logger.info(f"[PHASE 2] Rejected: all candidates failed quality checks, used raw best_title as fallback")
 
             if not best_title:
                 if quota_exhausted_models == len(_FALLBACK_MODELS):
@@ -628,56 +772,78 @@ The best title is usually the most specific and the most incomplete."""
             # ════════════════════ PHASE 3: SUPPORTING METADATA ════════════════════
             logger.info("[PHASE 3] Generating description, tags, and engagement metadata...")
 
-            _DESCRIPTION_SHAPES = [
-                (
-                    "ONE LINE ONLY before the hashtags: a single punchy line that's either "
-                    "a callout, a question, or a flat statement of the absurd thing that "
-                    "happened. No build-up, no context paragraph — just the line, then hashtags."
-                ),
-                (
-                    "TWO LINES before the hashtags: line 1 is a hook or reaction, line 2 adds "
-                    "one specific, slightly tangential detail (almost an aside) that naturally "
-                    "includes a keyword — not a recap of the video, more like something you'd "
-                    "add as an afterthought."
-                ),
-                (
-                    "QUESTION-LED: open by asking the viewer something directly related to the "
-                    "key moment (not 'what do you think' — something specific they'd actually "
-                    "want to answer), then one short follow-up line, then hashtags."
-                ),
+            _DESCRIPTION_STYLES = [
+                "observation (e.g., 'he was doing this for five minutes before i started recording')",
+                "mini-story (e.g., 'apparently this happens every morning')",
+                "opinion / reaction (e.g., 'i still don't know why the dog hates this hallway')",
+                "deadpan statement / extra context (e.g., 'the cashier noticed it instantly' or 'the weird part is nobody else reacted')",
+                "question (not generic engagement like 'what do you think', but a specific question related to the scene. Note: Questions should be used less often than other styles — do not default to this style.)",
             ]
-            chosen_shape = random.choice(_DESCRIPTION_SHAPES)
+            chosen_style = random.choices(
+                _DESCRIPTION_STYLES,
+                weights=[3, 3, 3, 3, 1]
+            )[0]
 
             phase3_prompt = f"""You are writing the description for ONE YouTube Short.
-Write it the way an actual person posting THIS specific video would — not a template.
+Write it the way an actual person posting THIS specific video would — casual and specific.
 
 VIDEO ANALYSIS:
 - Key moment: {analysis['key_moment']}
-- Core hook: {analysis['core_hook']}
 - Subjects: {', '.join(analysis['subject_entities'])}
 
 CHOSEN TITLE: "{best_title}"
 
-DESCRIPTION SHAPE FOR THIS ONE: {chosen_shape}
+REQUIRED DESCRIPTION STYLE FOR THIS VIDEO: {chosen_style}
 
-Whatever shape you use, the text before the hashtags must:
-- Never restate the title — add NEW information or a different angle on it
-- Never use AI-intro phrasing ("In this video...", "Welcome back...", "Here's what happens...")
-- Never explain that something is funny/wholesome/satisfying — describe the specific thing, let it land
-- Sound like it was typed in 10 seconds on a phone, not composed
+The description should feel like the second thing someone says after showing a friend the clip.
+(If the title is the sentence that escaped from the middle of a conversation, the description is the next sentence in that conversation.)
 
-HASHTAG LINE (after the text, same field):
+- The description's job is to reward curiosity created by the title. Add exactly one new piece of information (e.g., if Title is "the dog won't go near that hallway anymore", a Good description is "he's avoided that corner for three days now").
+- Do not explain everything or solve the mystery. Never restate the title.
+- Keep it sounding like it was typed in under 10 seconds. Fragments, sentence fragments, lowercase, and incomplete thoughts are acceptable.
+- Never use phrasing like "this clip", "this video", "this one", "caught on camera", or typical AI-intro phrasing ("In this video...", "Welcome back...", "Here's what happens...").
+- Never ask generic engagement questions ("what do you think?", "like and subscribe").
+- Avoid sounding like corporate SEO copy.
+- If it could be copied onto another upload with minimal changes, reject it. It must belong uniquely to THIS video.
+
+Examples of GOOD description lines:
+• he was doing this for five minutes before i started recording
+• apparently this happens every morning
+• i still don't know why the dog hates this hallway
+• the cashier noticed it instantly
+• the weird part is nobody else reacted
+
+Examples of BAD description lines:
+• watch this hilarious dog video
+• what do you think?
+• like and subscribe
+• in this video...
+• wait until the end
+
+Before returning the description, privately run this self-critique rubric and discard any that fail:
+1. Did I restate the title? (If yes, discard)
+2. Did I solve the mystery? (If yes, discard)
+3. Does this sound like a YouTube template? (If yes, discard)
+4. Would a real person type this? (If no, discard)
+5. Did I add exactly one new piece of information? (If no, discard)
+
+HASHTAG RULES (placed at the end on a single line, same field):
 - 10 to 13 hashtags total, niche-first then mainstream. Vary count and split slightly each time.
-  Roughly 55-65% NICHE (tied to this video's specific subjects/characters/objects),
-  remainder MAINSTREAM for broad discovery (real high-view videos in this category use these).
-- This is a NEW account — mainstream hashtags are required for discovery reach.
+- Priority: (1) exact subjects in the video, (2) exact category of content, (3) broad discovery hashtags.
+- Discovery labels, not SEO stuffing. If removing a hashtag would not improve discoverability, do not include it (avoid filler like #omg, #cool, #lol, #awesome).
+- Never use banned hashtags: #fyp, #foryou, #viral, #xyzbca, #explorepage, #blowup.
 
 TAG RULES ("tags" field, separate from hashtags):
 - 12 to 15 tags, niche-first then mainstream. Vary count and split slightly each time.
-  Roughly 55-65% NICHE — specific multi-word phrases for: {', '.join(analysis['subject_entities'])}
-  Remainder MAINSTREAM — broader category/discovery tags real viral videos in this niche rank for.
-- Ask: "what would someone type to find THIS EXACT video?" (niche) vs
-  "what would someone type to find content LIKE this?" (mainstream)
+- Generate tags from search intents prioritized in this order:
+  1. Exact scenario
+  2. Exact action
+  3. Exact subject
+  4. Broader category
+  5. Adjacent interests
+- Prefer real search phrases over keywords (e.g. "dog afraid of microwave", "funny dog behavior" instead of "dog", "funny").
+- Every tag must be something a real person would type into search (if you would be surprised to see this exact phrase in YouTube autocomplete, discard it).
+- Avoid tags that sound like metadata instead of a search query (e.g. "funny canine interaction", "unexpected response"). If it could be copied onto another upload with minimal changes, reject it.
 
 PINNED COMMENT: Short opinionated question that FORCES replies. Under 15 words.
 Sound like a nosy person stirring something, not a survey.
@@ -690,8 +856,8 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
                 try:
                     metadata = await _call_gemini(
                         client, model,
-                        contents=["Generate Phase 3 metadata based on the system instructions."],
-                        schema=SupportingMetadata,
+                        contents=["Produce the PublishingPackage."],
+                        schema=PublishingPackage,
                         max_tokens=1500,
                         temperature=0.8,
                         sys_instruct=phase3_prompt,
@@ -710,7 +876,7 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
                     quota_exhausted_models += 1
                     continue
                 except Exception as e:
-                    logger.warning(f"[PHASE 3] {model} failed: {e}")
+                    logger.warning(f"[PHASE 3] {model} failed: {e}", exc_info=True)
                     continue
 
             if not metadata:
