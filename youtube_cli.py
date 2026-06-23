@@ -278,6 +278,55 @@ async def handle_delete(args):
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
+async def handle_mt(args):
+    import os
+    import requests
+    import uuid
+    import json
+    import sys
+    from metadata import generate_metadata_async
+    
+    video_path = getattr(args, 'video_path', None)
+    cleanup_video = False
+
+    if getattr(args, 'discord_url', None):
+        os.makedirs("videos", exist_ok=True)
+        video_path = f"videos/temp_discord_{uuid.uuid4().hex[:8]}.mp4"
+        print(f"Downloading from Discord: {args.discord_url}", file=sys.stderr)
+        try:
+            r = requests.get(args.discord_url, stream=True, timeout=30)
+            r.raise_for_status()
+            with open(video_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024*1024):
+                    if chunk:
+                        f.write(chunk)
+            print(f"Downloaded to {video_path}", file=sys.stderr)
+            cleanup_video = True
+        except Exception as e:
+            print(f"Failed to download from Discord: {e}", file=sys.stderr)
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
+            sys.exit(1)
+
+    if not video_path:
+        print("ERROR: Must provide either --video_path or --discord_url", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        metadata = await generate_metadata_async(video_path, args.vibe)
+        if metadata:
+            print(json.dumps(metadata, indent=2))
+        else:
+            print("ERROR: Metadata generation returned None", file=sys.stderr)
+            sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        if cleanup_video and video_path and os.path.exists(video_path):
+            os.remove(video_path)
+            print(f"Cleaned up temp file {video_path}", file=sys.stderr)
+
 async def main():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument('--acc', required=False, help="Account ID to use")
@@ -298,6 +347,12 @@ async def main():
     # list subcommand
     list_parser = subparsers.add_parser("list", parents=[common], help="List uploaded videos")
     list_parser.add_argument('--sort', default='date', choices=['date', 'views', 'likes', 'comments'], help="Sort order for video list")
+
+    # mt subcommand
+    mt_parser = subparsers.add_parser("mt", aliases=['metadata'], parents=[common], help="Generate metadata for a video without uploading")
+    mt_parser.add_argument('--vibe', required=True, help="The vibe of the video")
+    mt_parser.add_argument('--video_path', required=False, help="Local path to the video file")
+    mt_parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
 
     # setprivacy subcommand
     setprivacy_parser = subparsers.add_parser("setprivacy", parents=[common], help="Set privacy status of a video")
@@ -328,6 +383,8 @@ async def main():
         await handle_upload(args)
     elif args.command == "list":
         await handle_list(args)
+    elif args.command in ["mt", "metadata"]:
+        await handle_mt(args)
     elif args.command == "setprivacy":
         await handle_setprivacy(args)
     elif args.command == "delete":
