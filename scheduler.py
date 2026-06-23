@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from metadata import generate_metadata_async
@@ -18,13 +18,13 @@ class Job:
     One upload job.
 
     Args:
-        video_path:  Path to the local video file (optional if drive_url is provided).
-        vibe:        The niche/energy e.g. 'funny meme', 'gaming fail', 'satisfying'.
-        drive_url:   Google Drive shareable link to the video (optional).
-        genre:       Broad genre used to pick a YouTube category (comedy, gaming, etc.).
-        default_privacy:     'private', 'unlisted', or 'public'. Defaults to 'private' — change when ready.
+        video_path:     Path to the local video file (optional if drive_url is provided).
+        content_brief:  The creator's intent / content brief (string).
+        drive_url:      Google Drive shareable link to the video (optional).
+        genre:          Broad genre used to pick a YouTube category (comedy, gaming, etc.).
+        default_privacy: 'private', 'unlisted', or 'public'. Defaults to 'private' — change when ready.
     """
-    vibe: str
+    content_brief: str = ""
     video_path: Optional[str] = None
     drive_url: Optional[str] = None
     genre: str = "default"
@@ -105,7 +105,7 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
                         cleanup_needed = True
 
             # Gemini watches the video and generates metadata
-            metadata = await generate_metadata_async(active_video_path, job.vibe)
+            metadata = await generate_metadata_async(active_video_path, job.content_brief)
 
             if not metadata:
                 raise RuntimeError(f"Metadata generation failed for {active_video_path}")

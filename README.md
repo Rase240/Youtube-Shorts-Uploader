@@ -4,7 +4,7 @@ An asynchronous Python pipeline that downloads videos from Google Drive/Discord 
 
 ## Features
 - **Google Drive & Discord Support**: Downloads video files directly via shareable drive links or direct discord URLs.
-- **AI Metadata Generation**: Automatically generates engaging titles, descriptions, and tags tailored to the video's "vibe" and genre using the Gemini API.
+- **AI Metadata Generation**: Automatically generates engaging titles, descriptions, and tags tailored to the video's content brief and genre using the Gemini API.
 - **Auto-Retry on Malformed JSON**: If Gemini outputs malformed JSON, the script automatically logs the raw text for debugging and retries generating metadata up to 3 times per model.
 - **Robust Rotating File Logs**: Logs all pipeline operations to both the console and a local `youtube_bot.log` file, which is self-managing (5MB size cap, 3 backups max) to prevent disk bloat.
 - **Leak-Proof Cleanup**: Uses strict `try...finally` blocks to guarantee that all temporary download videos are deleted, preventing disk clutter even if an upload crashes.
@@ -45,7 +45,7 @@ Open `main.py` and edit the `jobs` list to add your videos:
 jobs = [
     Job(
         drive_url="https://drive.google.com/file/d/YOUR_FILE_ID/view?usp=sharing", 
-        vibe="your video vibe/niche",
+        content_brief="Funny cat clip. Focus on the unexpected friendship between the cat and duck.",
         genre="comedy",
     ),
 ]
@@ -61,7 +61,7 @@ python main.py
 Run standalone operations from your command line:
 * **Upload**:
   ```bash
-  python youtube_cli.py upload --vibe "comedy meme" --drive_url "GDRIVE_URL" --privacy public
+  python youtube_cli.py upload --brief "comedy meme. dog afraid of microwave" --drive_url "GDRIVE_URL" --privacy public
   ```
 * **List Recent Uploads (with view, like, comment stats)**:
   ```bash
@@ -81,7 +81,7 @@ Run standalone operations from your command line:
 ## Discord Bot Integration
 
 When integrated with the companion Discord bot:
-- **`yt upload [attachment/url] vibe: <niche>`**: Uploads Drive links or attachments directly to YouTube shorts.
+- **`yt upload [attachment/url] brief: <content_brief>`**: Uploads Drive links or attachments directly to YouTube shorts (supports `brief:`, `b:`, or `vibe:` prefix).
 - **`yt list`**: Shows an interactive paginated list of your 50 most recent uploads and their performance stats.
 - **`yt setprivacy <id/url> <privacy>`**: Updates privacy settings from Discord.
 - **`yt delete <id/url>`**: Deletes a video.

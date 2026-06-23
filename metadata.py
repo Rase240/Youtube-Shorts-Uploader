@@ -64,6 +64,27 @@ class VideoDNA(BaseModel):
             "Be specific — reference what happens visually and when it occurs."
         )
     )
+    most_confusing_detail: str = Field(
+        ...,
+        description=(
+            "Describe the most confusing, unexplained, or bizarre detail in the video. "
+            "What behavior or event raises questions?"
+        )
+    )
+    strangest_visual_detail: str = Field(
+        ...,
+        description=(
+            "Describe the strangest, funniest, or most unexpected visual detail "
+            "(could be in the background, a person's expression, a quick 0.5s event, etc.)."
+        )
+    )
+    what_a_friend_would_notice_first: str = Field(
+        ...,
+        description=(
+            "If you showed this clip to a friend, what exact specific detail/moment "
+            "would they point out or notice first?"
+        )
+    )
     emotional_arc: str = Field(
         ...,
         description=(
@@ -454,7 +475,7 @@ async def _call_gemini(
     return None
 
 
-async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
+async def generate_metadata_async(video_path: str, content_brief: str = "") -> Optional[dict]:
     """
     3-phase metadata generation pipeline:
       Phase 1 (Analysis):  model watches video → deep analysis + 3 title-seed observations
@@ -466,6 +487,18 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
     """
     client = get_gemini_client()
     video_file = None
+
+    brief_cleaned = content_brief.strip()[:500]
+    brief_block = ""
+    if brief_cleaned:
+        brief_block = f"""
+
+CREATOR CONTEXT (optional guidance):
+{brief_cleaned}
+
+Use this only to guide framing and tone.
+The video is the source of truth.
+Never invent details that are not visible."""
 
     # Gemini's free-tier quota is tracked per-model, not per-account, so exhausting
     # gemini-3.5-flash says nothing about gemini-3.1-flash-lite's remaining quota.
@@ -498,14 +531,15 @@ async def generate_metadata_async(video_path: str, vibe: str) -> Optional[dict]:
             # ════════════════════ PHASE 1: VIDEO ANALYSIS ════════════════════
             logger.info("[PHASE 1] Analyzing video...")
 
-            phase1_prompt = f"""You are an expert video content analyst. Watch this video CAREFULLY.
-
-The creator's intended vibe/niche: {vibe}
+            phase1_prompt = f"""You are an expert video content analyst. Watch this video CAREFULLY.{brief_block}
 
 Deeply analyze this video so a title strategist can craft the perfect viral title.
 
 Focus on:
 - The single most striking/funny/shocking moment and exactly when it happens
+- The most confusing, unexplained, or bizarre detail in the video (what behavior or event raises questions)
+- The strangest, funniest, or most unexpected visual detail (could be in the background, a person's expression, a quick 0.5s event)
+- What exact specific detail or moment a friend would point out or notice first when shown this clip
 - The emotional journey a viewer goes through start to finish
 - Why someone would send this to a friend
 - The core irresistible hook that makes it impossible to scroll past
@@ -537,6 +571,12 @@ Be specific and visual. Reference exact moments in the video."""
                     )
                     if analysis:
                         logger.info(f"[PHASE 1] Done. Core hook: {analysis.get('core_hook', 'N/A')}")
+                        logger.info(
+                            "[PHASE 1] Confusing: %s | Strange: %s | First noticed: %s",
+                            analysis.get("most_confusing_detail"),
+                            analysis.get("strangest_visual_detail"),
+                            analysis.get("what_a_friend_would_notice_first"),
+                        )
                         logger.info(f"[PHASE 1] Title seeds: {analysis.get('click_triggers', [])}")
                         break
                 except QuotaExhaustedError:
@@ -569,7 +609,7 @@ Be specific and visual. Reference exact moments in the video."""
             perspectives_block = "\n".join(f"- {p}" for p in _TITLE_PERSPECTIVES)
             seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
 
-            phase2_prompt = f"""Imagine you watched this clip and immediately sent it to a friend.
+            phase2_prompt = f"""Imagine you watched this clip and immediately sent it to a friend.{brief_block}
 
 What would you type when sending this clip to one friend? That's the title.
 
@@ -650,6 +690,9 @@ Everything in this title must come from what's actually visible in THIS specific
 
 VIDEO ANALYSIS:
 KEY MOMENT: {analysis['key_moment']}
+MOST CONFUSING DETAIL: {analysis['most_confusing_detail']}
+STRANGEST VISUAL DETAIL: {analysis['strangest_visual_detail']}
+WHAT A FRIEND WOULD NOTICE FIRST: {analysis['what_a_friend_would_notice_first']}
 EMOTIONAL ARC: {analysis['emotional_arc']}
 SHAREABILITY: {analysis['shareability_factor']}
 CORE HOOK: {analysis['core_hook']}
@@ -684,8 +727,8 @@ The first criterion dominates all others.
 A highly specific title should beat a clever but generic title every time.
 
 Do not rush.
-Think of at least 10 possible titles privately.
-Keep only the strongest 5.
+Privately brainstorm several possibilities.
+Return only the strongest 5.
 
 The title should feel like a sentence that escaped from the middle of a conversation.
 
@@ -755,9 +798,6 @@ When in doubt: mention a strange detail, leave out the explanation, and trust th
                     logger.warning(f"[PHASE 2] {model} failed: {e}", exc_info=True)
                     continue
 
-                if best_title:
-                    break
-
             # Quality-gate fallback: a slightly imperfect title is always better than
             # crashing the pipeline and skipping the upload entirely. Log it loudly so
             # you can tune the gate or the prompts later.
@@ -793,7 +833,7 @@ When in doubt: mention a strange detail, leave out the explanation, and trust th
             )[0]
 
             phase3_prompt = f"""You are writing the description for ONE YouTube Short.
-Write it the way an actual person posting THIS specific video would — casual and specific.
+Write it the way an actual person posting THIS specific video would — casual and specific.{brief_block}
 
 VIDEO ANALYSIS:
 - Key moment: {analysis['key_moment']}
@@ -937,9 +977,15 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
 # ── Quick Test ───────────────────────────────────────────────────────────────
 
 async def _test():
+    brief = (
+        "Funny animal meme. The joke is that the dog has an irrational fear of "
+        "a kitchen drawer and freezes whenever it opens. Titles should feel like "
+        "a friend texting another friend after seeing something weird. Avoid generic "
+        "clickbait and reaction memes."
+    )
     result = await generate_metadata_async(
         video_path="videos/meme1.mp4",
-        vibe="funny animal meme",
+        content_brief=brief,
     )
     if result:
         print(json.dumps(result, indent=2))

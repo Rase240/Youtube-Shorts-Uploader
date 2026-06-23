@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import requests
 import uuid
 import os
 import sys
@@ -8,7 +7,7 @@ from scheduler import Job, run_batch, process_job
 
 async def main():
     parser = argparse.ArgumentParser(description="CLI for uploading a single video to YouTube via youtube_bot")
-    parser.add_argument('--vibe', required=True, help="The vibe of the video")
+    parser.add_argument('-b', '--content_brief', '--brief', '--vibe', dest='content_brief', required=True, help="Content brief (legacy alias: --vibe)")
     parser.add_argument('--drive_url', required=False, help="Google Drive link")
     parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
     parser.add_argument('--genre', default='comedy', help="Genre for YouTube category")
@@ -20,29 +19,21 @@ async def main():
 
     video_path = None
     if args.discord_url:
-        os.makedirs("videos", exist_ok=True)
         video_path = f"videos/temp_discord_{uuid.uuid4().hex[:8]}.mp4"
         print(f"Downloading from Discord: {args.discord_url}", file=sys.stderr)
-        try:
-            r = requests.get(args.discord_url, stream=True, timeout=30)
-            r.raise_for_status()
-            with open(video_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=1024*1024):
-                    if chunk:
-                        f.write(chunk)
-            print(f"Downloaded to {video_path}", file=sys.stderr)
-        except Exception as e:
-            print(f"Failed to download from Discord: {e}", file=sys.stderr)
-            if video_path and os.path.exists(video_path):
-                os.remove(video_path)
+        from drive import download_discord_video
+        success = await download_discord_video(args.discord_url, video_path)
+        if not success:
+            print("Failed to download video from Discord.", file=sys.stderr)
             sys.exit(1)
+        print(f"Downloaded to {video_path}", file=sys.stderr)
 
     notify_val = None
     if getattr(args, 'notify', None) is not None:
         notify_val = args.notify.lower() in ('true', '1', 'yes')
 
     job_kwargs = {
-        "vibe": args.vibe,
+        "content_brief": args.content_brief,
         "drive_url": args.drive_url,
         "video_path": video_path,
         "genre": args.genre,

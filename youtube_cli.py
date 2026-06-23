@@ -98,22 +98,14 @@ async def handle_sync_acc(args):
 async def handle_upload(args):
     video_path = None
     if args.discord_url:
-        os.makedirs("videos", exist_ok=True)
         video_path = f"videos/temp_discord_{uuid.uuid4().hex[:8]}.mp4"
         print(f"Downloading from Discord: {args.discord_url}", file=sys.stderr)
-        try:
-            r = requests.get(args.discord_url, stream=True, timeout=30)
-            r.raise_for_status()
-            with open(video_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=1024*1024):
-                    if chunk:
-                        f.write(chunk)
-            print(f"Downloaded to {video_path}", file=sys.stderr)
-        except Exception as e:
-            print(f"Failed to download from Discord: {e}", file=sys.stderr)
-            if video_path and os.path.exists(video_path):
-                os.remove(video_path)
+        from drive import download_discord_video
+        success = await download_discord_video(args.discord_url, video_path)
+        if not success:
+            print("Failed to download video from Discord.", file=sys.stderr)
             sys.exit(1)
+        print(f"Downloaded to {video_path}", file=sys.stderr)
 
     from scheduler import Job, process_job
     notify_val = None
@@ -121,7 +113,7 @@ async def handle_upload(args):
         notify_val = args.notify.lower() in ('true', '1', 'yes')
 
     job_kwargs = {
-        "vibe": args.vibe,
+        "content_brief": args.content_brief,
         "drive_url": args.drive_url,
         "video_path": video_path,
         "genre": args.genre,
@@ -279,34 +271,21 @@ async def handle_delete(args):
         sys.exit(1)
 
 async def handle_mt(args):
-    import os
-    import requests
-    import uuid
-    import json
-    import sys
     from metadata import generate_metadata_async
     
     video_path = getattr(args, 'video_path', None)
     cleanup_video = False
 
     if getattr(args, 'discord_url', None):
-        os.makedirs("videos", exist_ok=True)
         video_path = f"videos/temp_discord_{uuid.uuid4().hex[:8]}.mp4"
         print(f"Downloading from Discord: {args.discord_url}", file=sys.stderr)
-        try:
-            r = requests.get(args.discord_url, stream=True, timeout=30)
-            r.raise_for_status()
-            with open(video_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=1024*1024):
-                    if chunk:
-                        f.write(chunk)
-            print(f"Downloaded to {video_path}", file=sys.stderr)
-            cleanup_video = True
-        except Exception as e:
-            print(f"Failed to download from Discord: {e}", file=sys.stderr)
-            if video_path and os.path.exists(video_path):
-                os.remove(video_path)
+        from drive import download_discord_video
+        success = await download_discord_video(args.discord_url, video_path)
+        if not success:
+            print("Failed to download video from Discord.", file=sys.stderr)
             sys.exit(1)
+        print(f"Downloaded to {video_path}", file=sys.stderr)
+        cleanup_video = True
     elif getattr(args, 'drive_url', None):
         os.makedirs("videos", exist_ok=True)
         video_path = f"videos/temp_drive_{uuid.uuid4().hex[:8]}.mp4"
@@ -329,7 +308,7 @@ async def handle_mt(args):
         sys.exit(1)
 
     try:
-        metadata = await generate_metadata_async(video_path, args.vibe)
+        metadata = await generate_metadata_async(video_path, args.content_brief)
         if metadata:
             print(json.dumps(metadata, indent=2))
         else:
@@ -352,7 +331,7 @@ async def main():
 
     # upload subcommand
     upload_parser = subparsers.add_parser("upload", parents=[common], help="Upload a video")
-    upload_parser.add_argument('--vibe', required=True, help="The vibe of the video")
+    upload_parser.add_argument('-b', '--content_brief', '--brief', '--vibe', dest='content_brief', required=True, help="Content brief (legacy alias: --vibe)")
     upload_parser.add_argument('--drive_url', required=False, help="Google Drive link")
     upload_parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
     upload_parser.add_argument('--genre', default='comedy', help="Genre for YouTube category")
@@ -366,7 +345,7 @@ async def main():
 
     # mt subcommand
     mt_parser = subparsers.add_parser("mt", aliases=['metadata'], parents=[common], help="Generate metadata for a video without uploading")
-    mt_parser.add_argument('--vibe', required=True, help="The vibe of the video")
+    mt_parser.add_argument('-b', '--content_brief', '--brief', '--vibe', dest='content_brief', required=True, help="Content brief (legacy alias: --vibe)")
     mt_parser.add_argument('--video_path', required=False, help="Local path to the video file")
     mt_parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
     mt_parser.add_argument('--drive_url', required=False, help="Google Drive link")
