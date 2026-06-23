@@ -307,9 +307,25 @@ async def handle_mt(args):
             if video_path and os.path.exists(video_path):
                 os.remove(video_path)
             sys.exit(1)
+    elif getattr(args, 'drive_url', None):
+        os.makedirs("videos", exist_ok=True)
+        video_path = f"videos/temp_drive_{uuid.uuid4().hex[:8]}.mp4"
+        print(f"Downloading from Drive: {args.drive_url}", file=sys.stderr)
+        try:
+            from drive import download_video
+            success = await download_video(args.drive_url, video_path)
+            if not success:
+                raise Exception("Drive download failed")
+            print(f"Downloaded to {video_path}", file=sys.stderr)
+            cleanup_video = True
+        except Exception as e:
+            print(f"Failed to download from Drive: {e}", file=sys.stderr)
+            if video_path and os.path.exists(video_path):
+                os.remove(video_path)
+            sys.exit(1)
 
     if not video_path:
-        print("ERROR: Must provide either --video_path or --discord_url", file=sys.stderr)
+        print("ERROR: Must provide --video_path, --discord_url, or --drive_url", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -353,6 +369,7 @@ async def main():
     mt_parser.add_argument('--vibe', required=True, help="The vibe of the video")
     mt_parser.add_argument('--video_path', required=False, help="Local path to the video file")
     mt_parser.add_argument('--discord_url', required=False, help="Direct Discord attachment link")
+    mt_parser.add_argument('--drive_url', required=False, help="Google Drive link")
 
     # setprivacy subcommand
     setprivacy_parser = subparsers.add_parser("setprivacy", parents=[common], help="Set privacy status of a video")
