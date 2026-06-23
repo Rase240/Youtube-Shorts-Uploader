@@ -69,15 +69,19 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
             info = get_video_info(active_video_path)
             
             if info["duration"] == 0:
-                logger.warning(f"[WARNING] Could not read video info for {active_video_path}. "
-                               "Check that ffmpeg is installed (sudo apt install ffmpeg). "
-                               "Skipping preprocessing — video will upload as-is.")
-                print(f"[WARNING] Could not read video info. Is ffmpeg installed? Uploading as-is.", file=sys.stderr)
-            elif info["duration"] > 60:
+                if not job.force_normal:
+                    logger.error(f"[ERROR] Could not read video info for {active_video_path}.")
+                    print(f"FFPROBE_FAILED: Could not read video info. Is ffmpeg installed? Use force_normal to bypass.", file=sys.stderr)
+                    raise RuntimeError("FFPROBE_FAILED")
+                else:
+                    logger.warning(f"[WARNING] Could not read video info for {active_video_path}. "
+                                   "Skipping preprocessing — video will upload as-is due to force_normal.")
+                    print(f"[WARNING] Could not read video info. Uploading as-is due to force_normal flag.", file=sys.stderr)
+            elif info["duration"] > 180:
                 if not job.force_normal:
                     if sys.stdin.isatty():
                         # Standalone interactive terminal mode
-                        print(f"\n[WARNING] Video '{active_video_path}' is {info['duration']:.1f}s long (limit is 60s).")
+                        print(f"\n[WARNING] Video '{active_video_path}' is {info['duration']:.1f}s long (limit is 180s).")
                         print("YouTube will treat this as a NORMAL long-form video, NOT a Short.")
                         loop = asyncio.get_event_loop()
                         ans = await loop.run_in_executor(None, input, "Do you want to upload it as a normal video? (y/n): ")
@@ -85,7 +89,7 @@ async def process_job(job: Job, semaphore: asyncio.Semaphore) -> Optional[str]:
                             raise RuntimeError("Upload aborted by user: video too long for Shorts.")
                     else:
                         # Non-interactive mode (e.g. running via Discord bot exec)
-                        print("VIDEO_TOO_LONG: Video exceeds 60s limit for Shorts.", file=sys.stderr)
+                        print("VIDEO_TOO_LONG: Video exceeds 180s limit for Shorts.", file=sys.stderr)
                         raise RuntimeError("VIDEO_TOO_LONG")
                 else:
                     print(f"[WARNING] Video '{active_video_path}' is {info['duration']:.1f}s long. Uploading as normal video due to force_normal flag.")
