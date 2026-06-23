@@ -409,12 +409,20 @@ async def _call_gemini(
         except APIError as e:
             error_str = str(e).upper()
             is_quota = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
-            is_unavailable = "UNAVAILABLE" in error_str
+            status_code = getattr(e, "code", None)
+            is_transient = (
+                is_quota or
+                "UNAVAILABLE" in error_str or
+                "INTERNAL" in error_str or
+                "500" in error_str or
+                "503" in error_str or
+                (isinstance(status_code, int) and status_code >= 500)
+            )
 
-            if (is_quota or is_unavailable) and attempt < max_attempts - 1:
+            if is_transient and attempt < max_attempts - 1:
                 wait_time = 15 if is_quota else 5
                 logger.warning(
-                    f"[GEMINI] {model} {'rate-limited' if is_quota else 'unavailable'} — "
+                    f"[GEMINI] {model} transient API error ({e}) — "
                     f"retrying in {wait_time}s (attempt {attempt + 1}/{max_attempts})..."
                 )
                 await asyncio.sleep(wait_time)
