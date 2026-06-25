@@ -57,11 +57,15 @@ class QuotaExhaustedError(RuntimeError):
 
 class VideoDNA(BaseModel):
     """Phase 1 output: Grounded analysis of the video content."""
+    video_category: str = Field(
+        ...,
+        description="Classify as either 'Meme/Relatable/Skit' or 'Normal/Physical/Fails'."
+    )
     key_moment: str = Field(
         ...,
         description=(
-            "Describe the single most striking, funny, shocking, or satisfying moment in the video. "
-            "Be specific — reference what happens visually and when it occurs."
+            "Describe the physical moment on screen (e.g., 'he jerks back and opens his mouth'). "
+            "NOTE: If this is a meme, this physical moment is LESS important than the premise."
         )
     )
     most_confusing_detail: str = Field(
@@ -74,9 +78,10 @@ class VideoDNA(BaseModel):
     meme_premise: str = Field(
         ...,
         description=(
-            "State the situation being depicted. Use one sentence. "
-            "Only use actions, visible text, or obvious misunderstandings. "
-            "Never use diagnoses, explanations, reasons, interpretations, or psychology."
+            "The underlying joke or shared human experience being depicted. "
+            "CRITICAL: Do not describe physical movements here. "
+            "Bad: 'he jerks back when she pours water'. "
+            "Good: 'pretending to sleep because you don't want to get caught awake'."
         )
     )
     relatability_reason: str = Field(
@@ -90,17 +95,25 @@ class VideoDNA(BaseModel):
     caption_angle: str = Field(
         ...,
         description=(
-            "If you were posting this clip, what would you naturally say underneath it as a caption? "
-            "Use exactly one sentence. Do not narrate or explain. "
-            "Example: 'pretending to be asleep somehow becomes a competition'."
+            "What would someone text a friend along with this video? "
+            "Must be a REACTION to the premise, NOT a description of the video. "
+            "Bad: 'he is trying to stay asleep'. Good: 'getting caught awake is somehow worse'."
+        )
+    )
+    reaction_style: str = Field(
+        ...,
+        description=(
+            "The stylistic tone the caption and title should take. "
+            "Choose one: 'deadpan', 'relatable', 'confused', or 'opinionated'."
         )
     )
     title_angle: str = Field(
         ...,
         description=(
-            "If this clip appeared in a group chat, what is the one thought someone would type? "
-            "Under 10 words. No narration. No explanations. No SEO. "
-            "Example: 'getting caught awake is somehow worse'."
+            "If this clip appeared in a group chat, what is the FIRST thing someone would type? "
+            "Requirements: under 10 words, reaction or opinion only, no narration, "
+            "no body movements, no explanations, no SEO, no summaries. "
+            "It should feel immediately sendable."
         )
     )
     subject_entities: list[str] = Field(
@@ -115,11 +128,9 @@ class VideoDNA(BaseModel):
         ...,
         description=(
             "Generate exactly 3 title seeds. "
-            "Each seed must be: one specific moment, visually observable, "
-            "impossible to understand without seeing the clip, and useful for creating curiosity. "
-            "The trigger should feel like missing context, making a reader think: 'wait... why?'. "
-            "Bad: 'dog barks at fridge'. Good: 'the dog freezes every time this drawer opens'. "
-            "Bad: 'person gets surprised'. Good: 'he keeps checking under the couch for something'."
+            "For memes: react to the absurdity of the premise or misunderstanding. "
+            "For normal videos: point out a specific, visually observable mystery. "
+            "The trigger should feel like missing context, making a reader think: 'wait... why?'."
         )
     )
 
@@ -130,20 +141,19 @@ class TitleStudio(BaseModel):
         ...,
         description=(
             "Generate exactly 5 titles. "
-            "Write titles the way someone would text a friend after seeing this clip. "
-            "Pretend your friend can only see the title and a thumbnail. "
-            "Do not intentionally force variety. Some titles may end up similar. That is acceptable. "
-            "A title should feel like a simple observation, reaction, opinion, or question. "
-            "Never summarize, explain, market, optimize, or narrate. "
-            "Titles should sound slightly lazy, natural, and imperfect (e.g. sentence case, lowercase, fragments, inconsistent capitalization are all acceptable). "
-            "Discard any candidate that is generic, sounds like marketing, reveals the ending/resolution, or sounds like an AI generator."
+            "Be a participant in the joke, not an observer. "
+            "Never narrate physical movements (e.g., 'he jerks back', 'he opens his mouth'). "
+            "React to the premise/misunderstanding instead. "
+            "Do not intentionally force variety. Some titles may end up similar. "
+            "Titles should sound slightly lazy, natural, imperfect, and casual "
+            "(e.g. sentence case, lowercase, fragments, inconsistent capitalization)."
         )
     )
     ranking_reasoning: str = Field(
         ...,
         description=(
             "Briefly explain why you ranked them in this order. "
-            "What makes #1 the strongest? Why are the others weaker?"
+            "What makes #1 the most human, deadpan, and casual?"
         )
     )
     best_title: str = Field(
@@ -170,13 +180,13 @@ class PublishingPackage(BaseModel):
     description: str = Field(
         ...,
         description=(
-            "A casual, specific YouTube Shorts description. Write the description like a real person talking about the clip after posting it. "
-            "The description should be 1-3 natural sentences (prefer two medium sentences or three short ones) and target 200-400 characters before hashtags. "
-            "May include one additional observation, a reaction/opinion about the joke, brief context visible in the video, or a common experience directly implied by the clip. "
-            "Stop once the thought feels complete. "
-            "End with 10 to 13 hashtags total on a single line, ordered niche-first then mainstream. "
-            "Generate hashtags strictly from specific subjects, central/meme premise, and content category. "
-            "Never invent off-screen info, write stories/backstories, diagnose people, explain hidden meanings, or use marketing language."
+            "A casual, conversational YouTube Shorts description. "
+            "Act like a participant reacting to the joke, not an observer describing a video. "
+            "NEVER describe physical movements (e.g., 'the way he jerks back'). "
+            "NEVER explain why it's funny. NEVER psychoanalyze or write mini-essays. "
+            "1-2 natural sentences, acting like a text message to a friend reacting to the premise. "
+            "Target 200-400 characters before hashtags. "
+            "End with 10 to 13 hashtags total on a single line, ordered niche-first then mainstream."
         )
     )
     niche_hashtag_count: int = Field(
@@ -185,8 +195,7 @@ class PublishingPackage(BaseModel):
         description=(
             "The exact number of hashtags, counting from the START of the hashtag line in `description`, "
             "that are NICHE hashtags (before the mainstream ones begin). This MUST match how you actually "
-            "ordered the hashtag line — e.g. if the first 8 hashtags are niche and the last 5 are mainstream, "
-            "this value is 8. Used to verify the niche-first ordering and the 55-65% split programmatically."
+            "ordered the hashtag line."
         )
     )
     tags: list[str] = Field(
@@ -194,15 +203,8 @@ class PublishingPackage(BaseModel):
         description=(
             "12 to 15 YouTube tags (no # symbols), ordered niche-first then mainstream. "
             "Generate tags from search intents prioritized in this order: "
-            "1. Exact scenario, "
-            "2. Exact action, "
-            "3. Exact subject, "
-            "4. Broader category, "
-            "5. Adjacent interests. "
-            "Prefer real search phrases over keywords (e.g. 'dog afraid of microwave' instead of 'dog' or 'funny'). "
-            "Every tag must be something a real person would type into search (if you would be surprised to see the phrase in YouTube autocomplete, discard it). "
-            "Avoid tags that sound like metadata (e.g. 'funny canine interaction', 'unexpected response'). "
-            "If it could be copied onto another upload with minimal changes, reject it."
+            "1. Exact scenario, 2. Exact action, 3. Exact subject, 4. Broader category, 5. Adjacent interests. "
+            "Every tag must be something a real person would type into search."
         )
     )
     niche_tag_count: int = Field(
@@ -210,9 +212,7 @@ class PublishingPackage(BaseModel):
         ge=0,
         description=(
             "The exact number of tags, counting from the START of the `tags` list, that are NICHE tags "
-            "(before the mainstream ones begin). This MUST match how you actually ordered the `tags` list — "
-            "e.g. if tags[0:9] are niche and tags[9:13] are mainstream, this value is 9. "
-            "Used to verify the niche-first ordering and the 55-65% split programmatically."
+            "(before the mainstream ones begin)."
         )
     )
     thumbnail_recommendation: str = Field(
@@ -266,6 +266,8 @@ _NARRATING_PATTERNS = {
     "and it's hilarious", "and it's amazing", "so funny", "so wholesome",
     "so satisfying", "this will make you", "guaranteed to", "you won't believe",
     "wait for it", "watch until the end", "must see", "gone wrong", "gone viral",
+    "the way he", "he looks so", "she looks so", "the way she",
+    "he's really", "she's really", "he is really", "she is really",
 }
 
 _RESOLUTION_GIVEAWAYS = {
@@ -507,47 +509,37 @@ You are not a psychologist.
 You are not a marketer.
 You are not a storyteller.
 
-You are a person who just watched a short clip and is casually posting it.
+You are watching a short clip to casually post it online.{brief_block}
 
-Watch this video CAREFULLY.{brief_block}
+CRITICAL DIFFERENCE - DETERMINE THE CATEGORY:
+Is this a literal video (animals doing things, cooking, fails) OR a Meme/Skit/Relatable Post?
 
-Analyze this video literally.
+If it is a MEME, SKIT, or RELATABLE POST:
+- Identify the JOKE, MISUNDERSTANDING, or SHARED EXPERIENCE. 
+- DO NOT focus on the physical movements. 
+- Example Meme: "When your mom pours water on you but you can't react because you're pretending to sleep."
+- Bad Analysis: "He jerks back and opens his mouth." (This is physical narration).
+- Good Analysis: "Pretending to sleep because you don't want to get caught awake." (This is the premise).
 
-Only infer:
-1. what is visible
-2. what text explicitly says
-3. the obvious joke or premise
+If it is a NORMAL VIDEO (Fail, Animal, Satisfying):
+- Analyze literal physical events and visual context.
 
 Never infer:
 - diagnoses
 - motivations
-- backstories
 - character identities not shown
 - causes
-- symbolism
-- references
 - psychological states
 
 Focus on:
-- The single most striking/funny/shocking moment and exactly when it happens (key_moment)
-- The most confusing, unexplained, or bizarre detail in the video (most_confusing_detail)
-- If the video is a meme, the literal premise/joke of the meme (meme_premise)
-- The literal relatability reason (relatability_reason)
+- Video Category (video_category)
+- The overall tone (reaction_style)
+- The obvious joke or premise (meme_premise)
 - A casual, natural caption suggestion (caption_angle)
-- A casual, natural one-thought description for a group chat (title_angle)
 - Specific subjects/entities visible in the video (subject_entities)
-- Exactly 3 title seeds / click triggers (click_triggers). Each seed must be:
-  • one specific moment
-  • visually observable
-  • impossible to understand without seeing the clip
-  • useful for creating curiosity (the trigger should feel like missing context, making the reader think "wait... why?")
-  
-  Bad: dog barks at fridge
-  Good: the dog freezes every time this drawer opens
-  Bad: person gets surprised
-  Good: he keeps checking under the couch for something
-
-Be specific and visual. Reference exact moments in the video.
+- Exactly 3 title seeds / click triggers (click_triggers). 
+  For memes: react to the absurdity. 
+  For normal videos: point out a specific, visually observable mystery.
 
 FINAL GROUNDING CHECK:
 Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, do not include it."""
@@ -565,7 +557,8 @@ Could someone point at the video and say "yes, that's in there" or "yes, that's 
                         sys_instruct=phase1_prompt,
                     )
                     if analysis:
-                        logger.info(f"[PHASE 1] Done. Meme premise: {analysis.get('meme_premise', 'N/A')}")
+                        logger.info(f"[PHASE 1] Done. Category: {analysis.get('video_category', 'Unknown')}")
+                        logger.info(f"[PHASE 1] Meme premise: {analysis.get('meme_premise', 'N/A')}")
                         logger.info(
                             "[PHASE 1] Confusing: %s | Relatability: %s | Caption Angle: %s | Title Angle: %s",
                             analysis.get("most_confusing_detail"),
@@ -591,90 +584,54 @@ Could someone point at the video and say "yes, that's in there" or "yes, that's 
             # ════════════════════ PHASE 2: TITLE GENERATION ════════════════════
             logger.info("[PHASE 2] Generating title candidates...")
 
-            seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
+            is_meme = "Meme" in analysis.get("video_category", "")
 
-            phase2_prompt = f"""You are not a critic.
-You are not a psychologist.
-You are not a marketer.
-You are not a storyteller.
+            if is_meme:
+                phase2_context_block = f"""
+VIDEO CATEGORY: {analysis.get('video_category')}
+REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
+MEME PREMISE: {analysis['meme_premise']}
+CAPTION ANGLE: {analysis.get('caption_angle', '')}
+TITLE ANGLE: {analysis.get('title_angle', '')}
+"""
+            else:
+                seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
+                phase2_context_block = f"""
+VIDEO CATEGORY: {analysis.get('video_category')}
+REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
+KEY MOMENT: {analysis['key_moment']}
+RAW TITLE SEEDS:
+{seeds_block}
+"""
 
-You are a person who just watched a short clip and is casually posting it.
+            phase2_prompt = f"""You are a person who just watched a clip and is casually texting it to a friend.{brief_block}
 
-Write titles the way someone would text a friend after seeing this clip.{brief_block}
+ROLE: PARTICIPANT, NOT OBSERVER.
+You are participating in the joke. You are NOT describing the video.
 
----
+{phase2_context_block.strip()}
 
-TITLE GENERATION SPLIT:
+IF THIS IS A MEME/SKIT/RELATABLE POST:
+- The MEME PREMISE is the only thing that matters.
+- Never describe body movements, facial expressions, or play-by-play actions.
+- React to the absurdity, misunderstanding, or shared experience.
 
-### MEME MODE (for memes, skits, caption edits, and relatable posts)
-Allowed:
-- reactions
-- opinions
-- shared experiences
-- absurd premises
-Forbidden:
-- physical descriptions
-- movement narration
-- facial expressions
-- camera actions
-
-### NORMAL VIDEO MODE (for dog videos, fails compilations, cooking clips, etc.)
-Allowed:
-- simple observations
-- incomplete situations
-- weird moments
-
----
-
-For memes, skits, caption edits, and relatable posts:
-- The title should reference the PREMISE, MISUNDERSTANDING, or SHARED EXPERIENCE.
-- Do not describe body movements, facial expressions, or play-by-play actions.
-- Titles should feel slightly lazy, natural, and imperfect (e.g. lowercase, sentence case, fragments, etc.).
-
-Examples of GOOD meme titles:
+Examples of GOOD meme titles (Reactions):
 - pretending to be asleep got way too serious
 - bro refused to break character 😭
 - getting caught awake is somehow worse
 - fake sleeping around your parents is different
 
-Examples of BAD meme titles:
+Examples of BAD meme titles (Observations):
 - he's really trying to stay asleep
 - he looks terrified
-- the way he opens his mouth 😭
+- the way he opens his mouth
 - bro was not okay
 
----
-
-For memes and relatable posts, a reader should feel one of these:
-- i've done this before
-- why is this so true
-- bro i understand exactly what he means
-- wait what happened
-
-For normal clips, a reader should feel:
-- wait, why?
-
----
-
-VIDEO ANALYSIS:
-KEY MOMENT: {analysis['key_moment']}
-MEME PREMISE: {analysis['meme_premise']}
-RELATABILITY REASON: {analysis['relatability_reason']}
-TITLE ANGLE: {analysis.get('title_angle', '')}
-
-RAW TITLE SEEDS (specific observations from the analyst — use these as your starting material):
-{seeds_block}
-
-ALL OTHER RULES (every candidate must satisfy all of these):
-- Under 55 characters — hard limit, mobile truncates here
-- Capitalization should feel natural. Sentence case, lowercase, fragments, and inconsistent capitalization are all acceptable if they fit the clip.
-- No emotional labels ("hilarious", "wholesome", "satisfying") — show the thing, not the feeling
-- No narration ("watch as", "this video shows", "the moment when") — drop the viewer in directly
-- No emojis unless one specific emoji is doing real comedic work (most titles don't need one)
-- Fragments, slightly wrong grammar, weird specificity — all acceptable, all real
-
-FINAL GROUNDING CHECK:
-Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, do not include it.
+ALL TITLES MUST BE:
+- Under 55 characters — hard limit.
+- Casual and natural. Sentence case, lowercase, and fragments are encouraged.
+- No narration ("watch as", "this video shows", "the moment when").
 
 Do not rush. Return only the strongest 5."""
 
@@ -732,8 +689,7 @@ Do not rush. Return only the strongest 5."""
                     continue
 
             # Quality-gate fallback: a slightly imperfect title is always better than
-            # crashing the pipeline and skipping the upload entirely. Log it loudly so
-            # you can tune the gate or the prompts later.
+            # crashing the pipeline and skipping the upload entirely.
             if not best_title and last_title_data:
                 fallback = last_title_data.get("best_title", "")
                 if fallback:
@@ -753,111 +709,66 @@ Do not rush. Return only the strongest 5."""
             # ════════════════════ PHASE 3: SUPPORTING METADATA ════════════════════
             logger.info("[PHASE 3] Generating description, tags, and engagement metadata...")
 
-            phase3_prompt = f"""You are not a critic.
-You are not a psychologist.
-You are not a marketer.
-You are not a storyteller.
+            if is_meme:
+                phase3_context_block = f"""
+VIDEO CATEGORY: {analysis.get('video_category')}
+REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
+MEME PREMISE: {analysis['meme_premise']}
+RELATABILITY REASON: {analysis['relatability_reason']}
+CAPTION ANGLE: {analysis.get('caption_angle', '')}
+TITLE ANGLE: {analysis.get('title_angle', '')}
+"""
+            else:
+                phase3_context_block = f"""
+VIDEO CATEGORY: {analysis.get('video_category')}
+REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
+KEY MOMENT: {analysis['key_moment']}
+SUBJECTS: {', '.join(analysis['subject_entities'])}
+"""
 
-You are a person who just watched a short clip and is casually posting it.
-The description should feel like something someone typed in under a minute, not something they spent 10 minutes composing.
+            phase3_prompt = f"""You are a person texting a friend about a clip you just sent them.{brief_block}
 
-You are writing the description for ONE YouTube Short.
-Write it the way an actual person posting THIS specific video would — casual and specific.{brief_block}
-
-VIDEO ANALYSIS:
-- Key moment: {analysis['key_moment']}
-- Meme premise: {analysis['meme_premise']}
-- Relatability reason: {analysis['relatability_reason']}
-- Caption angle: {analysis.get('caption_angle', '')}
-- Subjects: {', '.join(analysis['subject_entities'])}
+{phase3_context_block.strip()}
 
 CHOSEN TITLE: "{best_title}"
 
-DESCRIPTION TONE & STYLE:
-- Write the description like a real person posting the meme/clip, not like SEO copy.
-- Imagine you sent this to a friend in a group chat — what would you type underneath it?
-- For memes, skits, caption edits, and relatable posts: react to the PREMISE and CAPTION ANGLE, not the physical movements. Do not describe body movements, facial expressions, or narrate what happens on screen.
-- For non-meme videos (e.g. animal fails, cooking, fails compilations): you may use literal observations and context.
+DESCRIPTION RULES:
+- Write 1-2 natural sentences. 
+- Prefer 1 medium sentence OR 2 short-medium sentences. Do not elaborate after the main thought is complete.
+- Fragments are encouraged. Complete sentences are not required.
+- BE A PARTICIPANT. React to the joke or premise using the REACTION STYLE.
+- DO NOT act like a movie reviewer, commentator, or AI.
+- NEVER describe physical movements on screen (e.g., "The way he jerks back...", "He opens his mouth...").
+- NEVER explain why the joke works.
+- NEVER psychoanalyze, invent backstories, or write mini-essays about "life lessons" or "mental health".
 
-DESCRIPTION LENGTH:
-- 1-3 sentences.
-- Target 200-400 characters before hashtags. Do not add filler just to reach the target length. Stop once the thought feels complete.
-- Prefer two medium sentences or three short ones.
+STRUCTURE:
+Just a natural, single thought reacting to the premise. 
+Think: "What would I type in a text message if I sent this meme to the group chat?"
 
-PREFERRED STRUCTURE (for memes/relatable posts):
-Sentence 1:
-reaction to the meme premise, caption angle, or shared experience.
-Sentence 2:
-specific observation about the situation, misunderstanding, or joke.
-Sentence 3 (optional):
-one final deadpan remark.
-Stop.
+Examples of GOOD descriptions:
+• fake sleeping around your parents becomes serious business.
+• getting caught awake somehow feels worse.
+• i know exactly why he refused to break character.
+• waking up at 6am doesn't count if you're still awake.
 
-Never:
-- describe body movements (e.g. "the way he jerks back", "he opens his mouth")
-- narrate physical screen actions (e.g. "he looks terrified", "she runs away")
-- invent off-screen information or create backstories
-- explain why the joke works
-- use marketing language or generic templates (e.g. "watch this hilarious clip")
-- write generic engagement bait
+Examples of BAD descriptions (DO NOT DO THIS):
+• The way he jerks back and opens his mouth is actually terrifying because he is fully committed to the bit.
+• This video shows how sleep deprivation causes hallucinations...
+• Watch this hilarious moment where...
 
-UNIQUENESS CHECK:
-If this description could fit more than 20% of YouTube Shorts, rewrite it.
-Mention at least one specific detail from THIS clip.
+HASHTAG RULES:
+- 10 to 13 hashtags total, niche-first then mainstream. Placed at the end on a single line.
 
-Examples of GOOD description lines:
-• I thought he had finally fixed his sleep schedule until the text said he was actually going to bed at 6 AM. The parents celebrating somehow makes this even worse because they're genuinely proud of him.
-
-• The dog freezes every single time that drawer opens and nobody else in the room seems concerned about it anymore. At some point they probably just accepted that this is his enemy.
-
-• I thought this was about to be another sad breakup edit and then the last line completely changed the mood. The switch happens so fast that your brain barely catches up.
-
-Examples of BAD description lines:
-• watch this hilarious dog video
-• what do you think?
-• like and subscribe
-• in this video...
-• wait until the end
-
-Before returning the description, privately run this self-critique rubric and discard any that fail:
-1. Did I restate the title? (If yes, discard)
-2. Did I solve the mystery? (If yes, discard)
-3. Does this sound like a YouTube template? (If yes, discard)
-4. Would a real person type this? (If no, discard)
-5. Did I follow the sentence length (1-3 sentences, 200-400 chars)? (If no, discard)
-
-HASHTAG RULES (placed at the end on a single line, same field):
-- 10 to 13 hashtags total, niche-first then mainstream. Vary count and split slightly each time.
-- Generate hashtags strictly from: subjects, central/meme premise, and content category.
-- Discovery labels, not SEO stuffing. If removing a hashtag would not improve discoverability, do not include it (avoid filler like #omg, #cool, #lol, #awesome).
-- Never use banned hashtags: #fyp, #foryou, #viral, #xyzbca, #explorepage, #blowup.
-
-TAG RULES ("tags" field, separate from hashtags):
-- 12 to 15 tags, niche-first then mainstream. Vary count and split slightly each time.
-- Generate tags from search intents prioritized in this order:
-  1. Exact scenario
-  2. Exact action
-  3. Exact subject
-  4. Broader category
-  5. Adjacent interests
-- Prefer real search phrases over keywords (e.g. "dog afraid of microwave", "funny dog behavior" instead of "dog", "funny").
-- Every tag must be something a real person would type into search (if you would be surprised to see this exact phrase in YouTube autocomplete, discard it).
-- Avoid tags that sound like metadata instead of a search query (e.g. "funny canine interaction", "unexpected response"). If it could be copied onto another upload with minimal changes, reject it.
+TAG RULES:
+- 12 to 15 tags, niche-first then mainstream.
 
 PINNED COMMENT: Short opinionated question that FORCES replies. Under 15 words.
-Sound like a nosy person stirring something, not a survey.
 
-THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max CTR.
-
-FINAL GROUNDING CHECK:
-For every title, description, hashtag, and tag:
-Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, remove it/do not include it.
-
-Every sentence in the description must pass this test:
-1. Could someone verify this by watching the clip?
-OR
-2. Is this an obvious reaction to the joke?
-If neither is true, remove the sentence."""
+Before returning the description, privately run this self-critique:
+1. Did I describe physical body movements? (If yes, discard)
+2. Does this sound like an essay or explanation? (If yes, discard)
+3. Would a real person type this in a group chat? (If no, discard)"""
 
             metadata = None
             quota_exhausted_models = 0
@@ -899,6 +810,7 @@ If neither is true, remove the sentence."""
                 "tags": metadata["tags"],
                 "thumbnail_recommendation": metadata["thumbnail_recommendation"],
                 "pinned_comment_suggestion": metadata["pinned_comment_suggestion"],
+                "video_category": analysis.get("video_category", "Unknown"),
                 "video_analysis": analysis["key_moment"],
                 "meme_premise": analysis["meme_premise"],
                 "relatability_reason": analysis["relatability_reason"],
@@ -918,10 +830,6 @@ If neither is true, remove the sentence."""
                     logger.warning(f"[GEMINI] Failed to delete uploaded video (non-fatal): {cleanup_err}")
 
     except QuotaExhaustedError as e:
-        # Return None so the caller can queue this video for later rather than crashing.
-        # By the time we get here, every model in _FALLBACK_MODELS has been tried and
-        # exhausted its own quota — this is a real "come back later" situation, not
-        # just one model having a bad day.
         logger.error(
             f"[QUOTA] All fallback models exhausted their Gemini quota — skipping '{video_path}'. "
             f"Queue for retry when quota resets. Error: {e}"

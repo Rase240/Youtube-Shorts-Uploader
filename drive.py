@@ -14,6 +14,9 @@ def extract_file_id(url: str) -> str:
     match = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url)
     if match:
         return match.group(1)
+    match = re.search(r"/folders/([a-zA-Z0-9_-]+)", url)
+    if match:
+        return match.group(1)
     match = re.search(r"id=([a-zA-Z0-9_-]+)", url)
     if match:
         return match.group(1)
