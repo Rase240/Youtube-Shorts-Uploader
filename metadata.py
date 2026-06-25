@@ -612,13 +612,13 @@ IF THIS IS A MEME/SKIT/RELATABLE POST:
 - Never describe body movements, facial expressions, or play-by-play actions.
 - React to the absurdity or misunderstanding with elite, unhinged internet humor.
 - Use heavy sarcasm, brainrot terminology, or absurd logic.
-- You MAY use skull emojis (💀) or crying emojis (😭) if it fits the shitpost vibe.
+- ZERO EMOJIS. Never use emojis in the title. Stick strictly to plain text.
 
 Examples of GOOD meme titles (Shitpost Reactions):
-- bro really thought gravity was optional 💀
+- bro really thought gravity was optional
 - the logic is simply not logicking
 - staying asleep is a full-time business
-- bro refused to break character 😭
+- bro refused to break character
 - hitting them with that 16-story lactose special
 
 Examples of BAD meme titles (Safe/Boring/Observational):
@@ -780,12 +780,13 @@ DESCRIPTION RULES:
 - Do NOT be overly literal. Use internet slang naturally (e.g., "bro", "locking in", "the math ain't mathing").
 - NEVER describe physical movements on screen.
 - NEVER explain why the joke works or use soft words like "wholesome" or "hilarious."
+- ZERO EMOJIS. Never use any emojis in the description or comments. 
 - Keep it punchy. 
 
 Examples of GOOD descriptions:
-- like what does milk even have to do with gravity at this point 💀
+- like what does milk even have to do with gravity at this point
 - third-degree burns are temporary but the victory of not doing chores is forever.
-- bro almost caught me slipping, gotta lock in 🔒
+- bro almost caught me slipping, gotta lock in
 - the commitment to the bit is honestly terrifying.
 
 HASHTAG RULES:
