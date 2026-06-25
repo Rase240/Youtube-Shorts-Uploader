@@ -18,6 +18,7 @@ from account_manager import get_token_file_for_account
 
 DEFAULT_PRIVACY = os.getenv("DEFAULT_PRIVACY", "public")
 DEFAULT_NOTIFY = os.getenv("DEFAULT_NOTIFY_SUBSCRIBERS", "true").lower() in ("true", "1", "yes")
+DEFAULT_EMBEDDABLE = os.getenv("DEFAULT_EMBEDDABLE", "true").lower() in ("true", "1", "yes")
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
@@ -44,6 +45,7 @@ class UploadConfig(BaseModel):
     genre: str = "default"
     default_privacy: str = DEFAULT_PRIVACY
     notify_subscribers: bool = DEFAULT_NOTIFY
+    embeddable: bool = DEFAULT_EMBEDDABLE
     made_for_kids: bool = False
     acc_id: Optional[str] = None
 
@@ -81,6 +83,7 @@ async def upload_video(config: UploadConfig) -> Optional[str]:
             "status": {
                 "privacyStatus": config.default_privacy,
                 "selfDeclaredMadeForKids": config.made_for_kids,
+                "embeddable": config.embeddable,
             }
         }
 

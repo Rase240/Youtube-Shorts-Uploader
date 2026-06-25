@@ -14,6 +14,7 @@ async def main():
     parser.add_argument('--privacy', default='public', help="Privacy status (public, private, unlisted)")
     parser.add_argument('--force_normal', action='store_true', help="Force upload as normal video without padding")
     parser.add_argument('--notify', default=None, choices=['true', 'false'], help="Notify subscribers")
+    parser.add_argument('--embeddable', default=None, choices=['true', 'false'], help="Allow video embedding")
 
     args = parser.parse_args()
 
@@ -32,6 +33,10 @@ async def main():
     if getattr(args, 'notify', None) is not None:
         notify_val = args.notify.lower() in ('true', '1', 'yes')
 
+    embeddable_val = None
+    if getattr(args, 'embeddable', None) is not None:
+        embeddable_val = args.embeddable.lower() in ('true', '1', 'yes')
+
     job_kwargs = {
         "content_brief": args.content_brief,
         "drive_url": args.drive_url,
@@ -42,6 +47,8 @@ async def main():
     }
     if notify_val is not None:
         job_kwargs["notify_subscribers"] = notify_val
+    if embeddable_val is not None:
+        job_kwargs["embeddable"] = embeddable_val
 
     job = Job(**job_kwargs)
     
