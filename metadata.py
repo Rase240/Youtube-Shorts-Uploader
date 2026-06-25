@@ -87,6 +87,22 @@ class VideoDNA(BaseModel):
             "Do not mention society, psychology, mental health, causes, or theories."
         )
     )
+    caption_angle: str = Field(
+        ...,
+        description=(
+            "If you were posting this clip, what would you naturally say underneath it as a caption? "
+            "Use exactly one sentence. Do not narrate or explain. "
+            "Example: 'pretending to be asleep somehow becomes a competition'."
+        )
+    )
+    title_angle: str = Field(
+        ...,
+        description=(
+            "If this clip appeared in a group chat, what is the one thought someone would type? "
+            "Under 10 words. No narration. No explanations. No SEO. "
+            "Example: 'getting caught awake is somehow worse'."
+        )
+    )
     subject_entities: list[str] = Field(
         ...,
         description=(
@@ -517,6 +533,8 @@ Focus on:
 - The most confusing, unexplained, or bizarre detail in the video (most_confusing_detail)
 - If the video is a meme, the literal premise/joke of the meme (meme_premise)
 - The literal relatability reason (relatability_reason)
+- A casual, natural caption suggestion (caption_angle)
+- A casual, natural one-thought description for a group chat (title_angle)
 - Specific subjects/entities visible in the video (subject_entities)
 - Exactly 3 title seeds / click triggers (click_triggers). Each seed must be:
   • one specific moment
@@ -549,9 +567,11 @@ Could someone point at the video and say "yes, that's in there" or "yes, that's 
                     if analysis:
                         logger.info(f"[PHASE 1] Done. Meme premise: {analysis.get('meme_premise', 'N/A')}")
                         logger.info(
-                            "[PHASE 1] Confusing: %s | Relatability: %s",
+                            "[PHASE 1] Confusing: %s | Relatability: %s | Caption Angle: %s | Title Angle: %s",
                             analysis.get("most_confusing_detail"),
                             analysis.get("relatability_reason"),
+                            analysis.get("caption_angle"),
+                            analysis.get("title_angle"),
                         )
                         logger.info(f"[PHASE 1] Title seeds: {analysis.get('click_triggers', [])}")
                         break
@@ -582,59 +602,68 @@ You are a person who just watched a short clip and is casually posting it.
 
 Write titles the way someone would text a friend after seeing this clip.{brief_block}
 
-A title should feel like:
-- an observation
-- a reaction
-- an opinion
-- a question
+---
 
-Never:
-- summarize
-- explain
-- market
-- optimize
-- narrate
+TITLE GENERATION SPLIT:
 
-Titles should sound slightly lazy and imperfect.
+### MEME MODE (for memes, skits, caption edits, and relatable posts)
+Allowed:
+- reactions
+- opinions
+- shared experiences
+- absurd premises
+Forbidden:
+- physical descriptions
+- movement narration
+- facial expressions
+- camera actions
+
+### NORMAL VIDEO MODE (for dog videos, fails compilations, cooking clips, etc.)
+Allowed:
+- simple observations
+- incomplete situations
+- weird moments
 
 ---
 
-Examples of GOOD titles:
-- the dog looked at him for way too long
-- bro brought a ladder for this
-- nobody noticed the kid in the background
-- he keeps checking the same drawer
-- the cashier's face at the end 😭
+For memes, skits, caption edits, and relatable posts:
+- The title should reference the PREMISE, MISUNDERSTANDING, or SHARED EXPERIENCE.
+- Do not describe body movements, facial expressions, or play-by-play actions.
+- Titles should feel slightly lazy, natural, and imperfect (e.g. lowercase, sentence case, fragments, etc.).
 
-Examples of BAD titles:
-- you won't believe what happened
-- funniest video ever
-- this is so satisfying
-- wait for it
-- watch until the end
-- incredible moment caught on camera
+Examples of GOOD meme titles:
+- pretending to be asleep got way too serious
+- bro refused to break character 😭
+- getting caught awake is somehow worse
+- fake sleeping around your parents is different
 
----
-
-Generate five titles.
-Do not force them to be different.
-Generate the five titles you genuinely think a real uploader might use.
-Some titles may end up similar. That is acceptable.
+Examples of BAD meme titles:
+- he's really trying to stay asleep
+- he looks terrified
+- the way he opens his mouth 😭
+- bro was not okay
 
 ---
 
-Everything in this title must come from what's actually visible in THIS specific video.
+For memes and relatable posts, a reader should feel one of these:
+- i've done this before
+- why is this so true
+- bro i understand exactly what he means
+- wait what happened
+
+For normal clips, a reader should feel:
+- wait, why?
+
+---
 
 VIDEO ANALYSIS:
 KEY MOMENT: {analysis['key_moment']}
 MEME PREMISE: {analysis['meme_premise']}
+RELATABILITY REASON: {analysis['relatability_reason']}
+TITLE ANGLE: {analysis.get('title_angle', '')}
 
 RAW TITLE SEEDS (specific observations from the analyst — use these as your starting material):
 {seeds_block}
-
-A reader should feel: "wait, why?"
-Do not intentionally engineer curiosity. Simply describe an incomplete situation.
-State the SETUP only. The outcome, punchline, and twist must not appear in the title.
 
 ALL OTHER RULES (every candidate must satisfy all of these):
 - Under 55 characters — hard limit, mobile truncates here
@@ -739,45 +768,38 @@ VIDEO ANALYSIS:
 - Key moment: {analysis['key_moment']}
 - Meme premise: {analysis['meme_premise']}
 - Relatability reason: {analysis['relatability_reason']}
+- Caption angle: {analysis.get('caption_angle', '')}
 - Subjects: {', '.join(analysis['subject_entities'])}
 
 CHOSEN TITLE: "{best_title}"
 
+DESCRIPTION TONE & STYLE:
+- Write the description like a real person posting the meme/clip, not like SEO copy.
+- Imagine you sent this to a friend in a group chat — what would you type underneath it?
+- For memes, skits, caption edits, and relatable posts: react to the PREMISE and CAPTION ANGLE, not the physical movements. Do not describe body movements, facial expressions, or narrate what happens on screen.
+- For non-meme videos (e.g. animal fails, cooking, fails compilations): you may use literal observations and context.
+
 DESCRIPTION LENGTH:
-- 1-3 sentences
-- Target 200-400 characters before hashtags. Do not add filler just to reach the target length.
+- 1-3 sentences.
+- Target 200-400 characters before hashtags. Do not add filler just to reach the target length. Stop once the thought feels complete.
 - Prefer two medium sentences or three short ones.
-- Stop once the thought feels complete
 
-The description should be 1-3 natural sentences and around 200-400 characters before hashtags.
-Write it like a real person talking about the clip after posting it.
-
-PREFERRED STRUCTURE:
+PREFERRED STRUCTURE (for memes/relatable posts):
 Sentence 1:
-specific observation from the clip.
+reaction to the meme premise, caption angle, or shared experience.
 Sentence 2:
-reaction, opinion, or common experience directly implied by the clip.
+specific observation about the situation, misunderstanding, or joke.
 Sentence 3 (optional):
-one final deadpan comment.
+one final deadpan remark.
 Stop.
 
-The description may include:
-- one additional observation
-- a reaction or opinion about the joke
-- brief context directly visible in the video or explicitly stated in on-screen text
-- a common experience directly implied by the clip
-
-Naturally mention important subjects and themes from the clip when relevant.
-
 Never:
-- invent off-screen information
-- create lore or backstories
-- diagnose people
-- explain hidden meanings
-- use marketing language
+- describe body movements (e.g. "the way he jerks back", "he opens his mouth")
+- narrate physical screen actions (e.g. "he looks terrified", "she runs away")
+- invent off-screen information or create backstories
+- explain why the joke works
+- use marketing language or generic templates (e.g. "watch this hilarious clip")
 - write generic engagement bait
-
-The description should read like a friend talking about the clip, not like SEO copy.
 
 UNIQUENESS CHECK:
 If this description could fit more than 20% of YouTube Shorts, rewrite it.
@@ -880,6 +902,8 @@ If neither is true, remove the sentence."""
                 "video_analysis": analysis["key_moment"],
                 "meme_premise": analysis["meme_premise"],
                 "relatability_reason": analysis["relatability_reason"],
+                "caption_angle": analysis.get("caption_angle", ""),
+                "title_angle": analysis.get("title_angle", ""),
             }
 
             logger.info(f"[DONE] Pipeline complete. Title: '{best_title}'")
