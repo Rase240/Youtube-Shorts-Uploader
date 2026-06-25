@@ -103,7 +103,7 @@ class VideoDNA(BaseModel):
         ...,
         description=(
             "The stylistic tone the caption and title should take. "
-            "Choose one: 'deadpan', 'relatable', 'confused', or 'opinionated'."
+            "Choose one: 'deadpan', 'relatable', 'unhinged', 'shitpost', or 'confused'."
         )
     )
     title_angle: str = Field(
@@ -610,19 +610,21 @@ TITLE ANGLE: {analysis.get('title_angle', '')}
 IF THIS IS A MEME/SKIT/RELATABLE POST:
 - The MEME PREMISE is the only thing that matters.
 - Never describe body movements, facial expressions, or play-by-play actions.
-- React to the absurdity, misunderstanding, or shared experience.
+- React to the absurdity or misunderstanding with elite, unhinged internet humor.
+- Use heavy sarcasm, brainrot terminology, or absurd logic.
+- You MAY use skull emojis (💀) or crying emojis (😭) if it fits the shitpost vibe.
 
-Examples of GOOD meme titles (Reactions):
-- pretending to be asleep got way too serious
+Examples of GOOD meme titles (Shitpost Reactions):
+- bro really thought gravity was optional 💀
+- the logic is simply not logicking
+- staying asleep is a full-time business
 - bro refused to break character 😭
-- getting caught awake is somehow worse
-- fake sleeping around your parents is different
+- hitting them with that 16-story lactose special
 
-Examples of BAD meme titles (Observations):
+Examples of BAD meme titles (Safe/Boring/Observational):
 - he's really trying to stay asleep
-- he looks terrified
-- the way he opens his mouth
-- bro was not okay
+- pretending to be asleep got way too serious
+- this is a relatable moment
 """
             else:
                 seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
@@ -766,49 +768,39 @@ MOST CONFUSING DETAIL: {analysis.get('most_confusing_detail', '')}
 SUBJECTS: {', '.join(analysis.get('subject_entities', []))}
 """
 
-            phase3_prompt = f"""You are a person texting a friend about a clip you just sent them.{brief_block}
+            phase3_prompt = f"""You are a chaotic, terminally-online internet user posting a meme to Shorts/Reels.{brief_block}
 
 {phase3_context_block.strip()}
 
 CHOSEN TITLE: "{best_title}"
 
 DESCRIPTION RULES:
-- Write 1-2 natural sentences. 
-- Prefer 1 medium sentence OR 2 short-medium sentences. Do not elaborate after the main thought is complete.
-- Fragments are encouraged. Complete sentences are not required.
-- BE A PARTICIPANT. React to the joke or premise using the REACTION STYLE.
-- DO NOT act like a movie reviewer, commentator, or AI.
-- NEVER describe physical movements on screen (e.g., "The way he jerks back...", "He opens his mouth...").
-- NEVER explain why the joke works.
-- NEVER psychoanalyze, invent backstories, or write mini-essays about "life lessons" or "mental health".
-
-STRUCTURE:
-Just a natural, single thought reacting to the premise. 
-Think: "What would I type in a text message if I sent this meme to the group chat?"
+- Write 1-2 unhinged, heavily sarcastic, or absurd sentences. 
+- You are not just reacting; you are committing to the bit of the joke.
+- Do NOT be overly literal. Use internet slang naturally (e.g., "bro", "locking in", "the math ain't mathing").
+- NEVER describe physical movements on screen.
+- NEVER explain why the joke works or use soft words like "wholesome" or "hilarious."
+- Keep it punchy. 
 
 Examples of GOOD descriptions:
-- fake sleeping around your parents becomes serious business.
-- getting caught awake somehow feels worse.
-- i know exactly why he refused to break character.
-- waking up at 6am doesn't count if you're still awake.
-
-Examples of BAD descriptions (DO NOT DO THIS):
-- The way he jerks back and opens his mouth is actually terrifying because he is fully committed to the bit.
-- This video shows how sleep deprivation causes hallucinations...
-- Watch this hilarious moment where...
+- like what does milk even have to do with gravity at this point 💀
+- third-degree burns are temporary but the victory of not doing chores is forever.
+- bro almost caught me slipping, gotta lock in 🔒
+- the commitment to the bit is honestly terrifying.
 
 HASHTAG RULES:
-- 10 to 13 hashtags total, niche-first then mainstream. Placed at the end on a single line.
+- 10 to 13 hashtags total. 
+- You MUST include chaotic/meme tags like #shitposting, #brainrot, #okbuddyretard, #absurdhumor, alongside the niche tags.
+- Placed at the end on a single line.
 
 TAG RULES:
-- 12 to 15 tags, niche-first then mainstream.
+- 12 to 15 tags. Prioritize meme/shitpost terms and the exact niche scenario.
 
-PINNED COMMENT: Short opinionated question that FORCES replies. Under 15 words.
+PINNED COMMENT: Short, slightly edgy or highly sarcastic question that forces viewers to argue or reply. Under 15 words.
 
 Before returning the description, privately run this self-critique:
-1. Did I describe physical body movements? (If yes, discard)
-2. Does this sound like an essay or explanation? (If yes, discard)
-3. Would a real person type this in a group chat? (If no, discard)"""
+1. Is this too safe or boring? (If yes, rewrite to be more absurd).
+2. Did I explain the joke instead of participating in it? (If yes, discard)."""
 
             metadata = None
             quota_exhausted_models = 0
