@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import random
 import re
 import sys
 from logging.handlers import RotatingFileHandler
@@ -230,6 +229,23 @@ class PublishingPackage(BaseModel):
         )
     )
 
+    # FIX (re-added, and made global rather than last-line-only): previous version of this
+    # file dropped this validator entirely, so hashtags were never capped at all. This scans
+    # the WHOLE description for hashtags (not just the last line), so it self-heals even if
+    # the model ignores the "single line at the end" instruction.
+    @field_validator("description")
+    def cap_hashtags(cls, v: str) -> str:
+        hashtags = re.findall(r"#\w+", v)
+        if len(hashtags) > 13:
+            kept_hashtags = " ".join(hashtags[:13])
+            text_without_tags = re.sub(r"#\w+", "", v).strip()
+            logger.warning(
+                f"[PHASE 3] Model returned {len(hashtags)} hashtags, truncating to 13. "
+                f"Dropped: {hashtags[13:]}"
+            )
+            return f"{text_without_tags}\n\n{kept_hashtags}"
+        return v
+
     @field_validator("tags")
     def cap_tags(cls, v: list[str]) -> list[str]:
         cleaned = list(dict.fromkeys(
@@ -278,15 +294,7 @@ _RESOLUTION_GIVEAWAYS = {
 
 
 def _check_title_quality(title: str) -> Optional[str]:
-    """Returns a rejection reason if the title fails quality checks, None if it passes.
-
-    Ordered by frequency of failure in practice:
-      1. Length / formatting
-      2. Narrating/explaining (main AI tell)
-      3. Giving away the resolution
-      4. Banned slop words (last-resort net)
-      5. Overly formal capitalization
-    """
+    """Returns a rejection reason if the title fails quality checks, None if it passes."""
     if not title or len(title.strip()) < 10:
         return f"Title too short ({len(title.strip())} chars)"
 
@@ -310,9 +318,6 @@ def _check_title_quality(title: str) -> Optional[str]:
         if banned in title_lower:
             return f"Contains banned word/phrase: '{banned}'"
 
-    # Flag heavily title-cased titles (e.g. "A Funny Dog Playing With A Ball").
-    # - Start from words[1:] — a leading capital is normal in a sentence.
-    # - Only count words > 2 chars to avoid flagging "I", "TV", initialisms, etc.
     words = title.split()
     if len(words) >= 6:
         capitalized = sum(1 for w in words[1:] if len(w) > 2 and w[0].isupper())
@@ -329,9 +334,9 @@ def _log_hashtag_and_tag_counts(
     niche_tag_count: int,
 ) -> None:
     """Logs hashtag/tag counts and verifies niche/mainstream split. Non-fatal."""
-    lines = description.strip().splitlines()
-    last_line = lines[-1] if lines else ""
-    hashtags = re.findall(r"#\w+", last_line)
+    # FIX: scan the whole description for hashtags, consistent with the validator above,
+    # instead of assuming they're all on the last line.
+    hashtags = re.findall(r"#\w+", description)
     n_hashtags = len(hashtags)
     n_tags = len(tags)
 
@@ -392,7 +397,6 @@ async def _call_gemini(
                 ),
             )
 
-            # 🚀 The SDK handles all the JSON parsing and validation natively
             if response.parsed is not None:
                 return response.parsed.model_dump()
             else:
@@ -433,7 +437,6 @@ async def _call_gemini(
                 raise
 
         except ValidationError as je:
-            # We only need to catch ValidationError now, json.JSONDecodeError is obsolete
             logger.warning(f"[GEMINI] Pydantic validation failed on attempt {attempt + 1}/{max_attempts}: {je}")
             if attempt >= max_attempts - 1:
                 raise
@@ -491,9 +494,13 @@ Never invent details that are not visible."""
             video_file_info = None
             for _ in range(max_polls):
                 video_file_info = await client.aio.files.get(name=video_file.name)
-                if video_file_info.state == "ACTIVE":
+                # FIX: state may be a FileState enum object, not a plain string, depending on
+                # SDK version. Comparing directly with == "ACTIVE" can silently never match,
+                # burning all 60 polls (120s) on every video even when it finished instantly.
+                state_str = str(getattr(video_file_info.state, "name", video_file_info.state)).upper()
+                if "ACTIVE" in state_str:
                     break
-                elif video_file_info.state == "FAILED":
+                elif "FAILED" in state_str:
                     raise RuntimeError("Video processing failed on Google's end.")
                 await asyncio.sleep(2)
             else:
@@ -531,15 +538,18 @@ Never infer:
 - causes
 - psychological states
 
-Focus on:
-- Video Category (video_category)
-- The overall tone (reaction_style)
-- The obvious joke or premise (meme_premise)
-- A casual, natural caption suggestion (caption_angle)
-- Specific subjects/entities visible in the video (subject_entities)
-- Exactly 3 title seeds / click triggers (click_triggers). 
-  For memes: react to the absurdity. 
-  For normal videos: point out a specific, visually observable mystery.
+Generate ALL of the following fields:
+- video_category: the classification above
+- key_moment: the literal physical moment on screen
+- most_confusing_detail: the most bizarre/unexplained detail visible
+- meme_premise: the underlying joke or shared experience (memes only matter here, not body movements)
+- relatability_reason: "People relate to this because ___", under 12 words
+- caption_angle: a reaction someone would text a friend, not a description
+- reaction_style: the overall tone (deadpan / relatable / confused / opinionated)
+- title_angle: the first thing someone would type in a group chat, under 10 words
+- subject_entities: 3-5 specific visible entities/subjects, for SEO use later
+- click_triggers: exactly 3 title seeds.
+  For memes: react to the absurdity. For normal videos: point out a specific, visually observable mystery.
 
 FINAL GROUNDING CHECK:
 Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, do not include it."""
@@ -594,23 +604,9 @@ MEME PREMISE: {analysis['meme_premise']}
 CAPTION ANGLE: {analysis.get('caption_angle', '')}
 TITLE ANGLE: {analysis.get('title_angle', '')}
 """
-            else:
-                seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
-                phase2_context_block = f"""
-VIDEO CATEGORY: {analysis.get('video_category')}
-REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
-KEY MOMENT: {analysis['key_moment']}
-RAW TITLE SEEDS:
-{seeds_block}
-"""
-
-            phase2_prompt = f"""You are a person who just watched a clip and is casually texting it to a friend.{brief_block}
-
-ROLE: PARTICIPANT, NOT OBSERVER.
-You are participating in the joke. You are NOT describing the video.
-
-{phase2_context_block.strip()}
-
+                # FIX: previously the prompt's example block was hardcoded meme-only even
+                # when the video was a normal/physical video. Now it's conditional.
+                phase2_rules_block = """
 IF THIS IS A MEME/SKIT/RELATABLE POST:
 - The MEME PREMISE is the only thing that matters.
 - Never describe body movements, facial expressions, or play-by-play actions.
@@ -627,6 +623,40 @@ Examples of BAD meme titles (Observations):
 - he looks terrified
 - the way he opens his mouth
 - bro was not okay
+"""
+            else:
+                seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
+                phase2_context_block = f"""
+VIDEO CATEGORY: {analysis.get('video_category')}
+REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
+KEY MOMENT: {analysis['key_moment']}
+RAW TITLE SEEDS:
+{seeds_block}
+"""
+                phase2_rules_block = """
+IF THIS IS A NORMAL/PHYSICAL/FAILS VIDEO:
+- Point out a specific, visually observable mystery or strange detail.
+- Do not invent a joke that isn't actually there.
+- Make the reader think: "wait... why?"
+
+Examples of GOOD normal-video titles (Observations):
+- the dog freezes every time this drawer opens
+- he keeps checking under the couch for something
+- nobody in the room noticed what just happened
+
+Examples of BAD normal-video titles (forced meme reactions):
+- bro really thought he could pull that off 😭
+- this is sending me
+"""
+
+            phase2_prompt = f"""You are a person who just watched a clip and is casually texting it to a friend.{brief_block}
+
+ROLE: PARTICIPANT, NOT OBSERVER.
+You are participating in the joke or moment. You are NOT describing the video.
+
+{phase2_context_block.strip()}
+
+{phase2_rules_block.strip()}
 
 ALL TITLES MUST BE:
 - Under 55 characters — hard limit.
@@ -651,14 +681,20 @@ Do not rush. Return only the strongest 5."""
                         max_attempts=3,
                     )
                     if title_data:
-                        last_title_data = title_data
+                        # FIX: previously this was overwritten on every loop iteration, so if
+                        # the FIRST (usually stronger) model produced a near-miss title and a
+                        # LATER fallback model also failed quality checks, the fallback would
+                        # use the later/weaker model's output. Now we only lock in the first
+                        # model's attempt as the fallback-of-last-resort.
+                        if last_title_data is None:
+                            last_title_data = title_data
+
                         candidate = title_data.get("best_title", "")
                         quality_issue = _check_title_quality(candidate)
                         initial_candidate = candidate
                         initial_issue = quality_issue
 
                         if quality_issue:
-                            # Scan alternates before re-prompting or moving to next model
                             for alt in title_data.get("candidates", []):
                                 if alt != candidate and not _check_title_quality(alt):
                                     candidate = alt
@@ -688,8 +724,6 @@ Do not rush. Return only the strongest 5."""
                     logger.warning(f"[PHASE 2] {model} failed: {e}", exc_info=True)
                     continue
 
-            # Quality-gate fallback: a slightly imperfect title is always better than
-            # crashing the pipeline and skipping the upload entirely.
             if not best_title and last_title_data:
                 fallback = last_title_data.get("best_title", "")
                 if fallback:
@@ -710,6 +744,10 @@ Do not rush. Return only the strongest 5."""
             logger.info("[PHASE 3] Generating description, tags, and engagement metadata...")
 
             if is_meme:
+                # FIX: previously this branch omitted subject_entities entirely, even though
+                # the schema explicitly says they're meant to be used for SEO tags. Memes are
+                # likely the majority of content, so tag generation was losing grounding for
+                # most videos.
                 phase3_context_block = f"""
 VIDEO CATEGORY: {analysis.get('video_category')}
 REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
@@ -717,13 +755,15 @@ MEME PREMISE: {analysis['meme_premise']}
 RELATABILITY REASON: {analysis['relatability_reason']}
 CAPTION ANGLE: {analysis.get('caption_angle', '')}
 TITLE ANGLE: {analysis.get('title_angle', '')}
+SUBJECTS: {', '.join(analysis.get('subject_entities', []))}
 """
             else:
                 phase3_context_block = f"""
 VIDEO CATEGORY: {analysis.get('video_category')}
 REACTION STYLE: {analysis.get('reaction_style', 'deadpan')}
 KEY MOMENT: {analysis['key_moment']}
-SUBJECTS: {', '.join(analysis['subject_entities'])}
+MOST CONFUSING DETAIL: {analysis.get('most_confusing_detail', '')}
+SUBJECTS: {', '.join(analysis.get('subject_entities', []))}
 """
 
             phase3_prompt = f"""You are a person texting a friend about a clip you just sent them.{brief_block}
@@ -747,15 +787,15 @@ Just a natural, single thought reacting to the premise.
 Think: "What would I type in a text message if I sent this meme to the group chat?"
 
 Examples of GOOD descriptions:
-• fake sleeping around your parents becomes serious business.
-• getting caught awake somehow feels worse.
-• i know exactly why he refused to break character.
-• waking up at 6am doesn't count if you're still awake.
+- fake sleeping around your parents becomes serious business.
+- getting caught awake somehow feels worse.
+- i know exactly why he refused to break character.
+- waking up at 6am doesn't count if you're still awake.
 
 Examples of BAD descriptions (DO NOT DO THIS):
-• The way he jerks back and opens his mouth is actually terrifying because he is fully committed to the bit.
-• This video shows how sleep deprivation causes hallucinations...
-• Watch this hilarious moment where...
+- The way he jerks back and opens his mouth is actually terrifying because he is fully committed to the bit.
+- This video shows how sleep deprivation causes hallucinations...
+- Watch this hilarious moment where...
 
 HASHTAG RULES:
 - 10 to 13 hashtags total, niche-first then mainstream. Placed at the end on a single line.
