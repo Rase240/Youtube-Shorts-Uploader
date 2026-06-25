@@ -56,7 +56,7 @@ class QuotaExhaustedError(RuntimeError):
 # ── Pydantic Schemas ─────────────────────────────────────────────────────────
 
 class VideoDNA(BaseModel):
-    """Phase 1 output: Deep analysis of the video content."""
+    """Phase 1 output: Grounded analysis of the video content."""
     key_moment: str = Field(
         ...,
         description=(
@@ -71,39 +71,20 @@ class VideoDNA(BaseModel):
             "What behavior or event raises questions?"
         )
     )
-    strangest_visual_detail: str = Field(
+    meme_premise: str = Field(
         ...,
         description=(
-            "Describe the strangest, funniest, or most unexpected visual detail "
-            "(could be in the background, a person's expression, a quick 0.5s event, etc.)."
+            "State the situation being depicted. Use one sentence. "
+            "Only use actions, visible text, or obvious misunderstandings. "
+            "Never use diagnoses, explanations, reasons, interpretations, or psychology."
         )
     )
-    what_a_friend_would_notice_first: str = Field(
+    relatability_reason: str = Field(
         ...,
         description=(
-            "If you showed this clip to a friend, what exact specific detail/moment "
-            "would they point out or notice first?"
-        )
-    )
-    emotional_arc: str = Field(
-        ...,
-        description=(
-            "Describe the emotional journey a viewer goes through watching this video. "
-            "What do they feel at the start vs. the climax vs. the end?"
-        )
-    )
-    shareability_factor: str = Field(
-        ...,
-        description=(
-            "Why would someone send this to a friend? What makes it worth sharing? "
-            "Is it relatable, shocking, funny, wholesome, or rage-inducing?"
-        )
-    )
-    core_hook: str = Field(
-        ...,
-        description=(
-            "In one sentence, what is the irresistible hook of this video? "
-            "What makes it impossible to scroll past?"
+            "Complete this sentence: 'People relate to this because _____.' "
+            "Keep under 12 words. Describe only a common experience. "
+            "Do not mention society, psychology, mental health, causes, or theories."
         )
     )
     subject_entities: list[str] = Field(
@@ -133,30 +114,13 @@ class TitleStudio(BaseModel):
         ...,
         description=(
             "Generate exactly 5 titles. "
-            "Imagine you watched this clip and immediately sent it to a friend. "
-            "What would you type when sending this clip to one friend? That's the title. "
+            "Write titles the way someone would text a friend after seeing this clip. "
             "Pretend your friend can only see the title and a thumbnail. "
-            "The title's job is to make them ask for the missing context. "
-            "All 5 titles MUST feel meaningfully different (written by five different people, not simply rewording the same idea). "
-            "Each title must write from a different perspective: "
-            "1. someone confused by the clip "
-            "2. someone who sees themselves in the situation "
-            "3. someone who noticed a weird detail "
-            "4. someone worried about what happens next "
-            "5. someone disagreeing with what's happening. "
-            "Capitalization should feel natural. Sentence case, lowercase, fragments, and inconsistent capitalization "
-            "are all acceptable if they fit the clip. "
-            "Bad titles: explain, summarize, advertise, use generic templates, or could belong to another video. "
-            "Avoid defaulting to reaction memes, Twitter captions, or Reddit-style comments (e.g., 'bro really said', 'nah because why', 'i'm crying 😭'). "
-            "Prefer describing a specific thing that happened in the clip. "
-            "For each candidate, privately run this self-critique rubric: "
-            "1. Could this fit 1000 other videos? "
-            "2. Does it reveal the ending? "
-            "3. Does it sound like marketing? "
-            "4. Does it mention a specific visual detail? "
-            "5. Would I genuinely click this? "
-            "6. If replacing one noun makes the title fit another video, is it too generic? "
-            "Discard any candidate that fails. If it sounds like it came from an AI title generator, discard it immediately."
+            "Do not intentionally force variety. Some titles may end up similar. That is acceptable. "
+            "A title should feel like a simple observation, reaction, opinion, or question. "
+            "Never summarize, explain, market, optimize, or narrate. "
+            "Titles should sound slightly lazy, natural, and imperfect (e.g. sentence case, lowercase, fragments, inconsistent capitalization are all acceptable). "
+            "Discard any candidate that is generic, sounds like marketing, reveals the ending/resolution, or sounds like an AI generator."
         )
     )
     ranking_reasoning: str = Field(
@@ -190,22 +154,13 @@ class PublishingPackage(BaseModel):
     description: str = Field(
         ...,
         description=(
-            "A casual, specific YouTube Shorts description. "
-            "Write the description the way someone would caption this clip after posting it (e.g. an observation, opinion, reaction, extra context, mini-story, or deadpan statement — do not default to questions). "
-            "The description should feel like the second thing someone says after showing a friend the clip (the next sentence in the conversation). "
-            "It should feel like it was typed in under 10 seconds; fragments, lowercase, and incomplete thoughts are acceptable. "
-            "The description's job is to reward curiosity created by the title by adding exactly one new piece of information without restating the title, explaining everything, or solving the mystery. "
+            "A casual, specific YouTube Shorts description. Write the description like a real person talking about the clip after posting it. "
+            "The description should be 1-3 natural sentences (prefer two medium sentences or three short ones) and target 200-400 characters before hashtags. "
+            "May include one additional observation, a reaction/opinion about the joke, brief context visible in the video, or a common experience directly implied by the clip. "
+            "Stop once the thought feels complete. "
             "End with 10 to 13 hashtags total on a single line, ordered niche-first then mainstream. "
-            "Generate hashtags prioritizing: exact subjects in the video -> exact category of content -> broad discovery hashtags. "
-            "If removing a hashtag would not improve discoverability, do not include it (avoid filler like #omg, #cool, #lol, #awesome). "
-            "Never use phrasing like 'this clip', 'this video', 'this one', 'caught on camera', generic AI intros, or generic engagement questions. "
-            "Before returning the description, privately run this self-critique rubric: "
-            "1. Did I restate the title? "
-            "2. Did I solve the mystery? "
-            "3. Does this sound like a YouTube template? "
-            "4. Would a real person type this? "
-            "5. Did I add exactly one new piece of information? "
-            "If it could be copied onto another upload with minimal changes, reject it."
+            "Generate hashtags strictly from specific subjects, central/meme premise, and content category. "
+            "Never invent off-screen info, write stories/backstories, diagnose people, explain hidden meanings, or use marketing language."
         )
     )
     niche_hashtag_count: int = Field(
@@ -531,20 +486,39 @@ Never invent details that are not visible."""
             # ════════════════════ PHASE 1: VIDEO ANALYSIS ════════════════════
             logger.info("[PHASE 1] Analyzing video...")
 
-            phase1_prompt = f"""You are an expert video content analyst. Watch this video CAREFULLY.{brief_block}
+            phase1_prompt = f"""You are not a critic.
+You are not a psychologist.
+You are not a marketer.
+You are not a storyteller.
 
-Deeply analyze this video so a title strategist can craft the perfect viral title.
+You are a person who just watched a short clip and is casually posting it.
+
+Watch this video CAREFULLY.{brief_block}
+
+Analyze this video literally.
+
+Only infer:
+1. what is visible
+2. what text explicitly says
+3. the obvious joke or premise
+
+Never infer:
+- diagnoses
+- motivations
+- backstories
+- character identities not shown
+- causes
+- symbolism
+- references
+- psychological states
 
 Focus on:
-- The single most striking/funny/shocking moment and exactly when it happens
-- The most confusing, unexplained, or bizarre detail in the video (what behavior or event raises questions)
-- The strangest, funniest, or most unexpected visual detail (could be in the background, a person's expression, a quick 0.5s event)
-- What exact specific detail or moment a friend would point out or notice first when shown this clip
-- The emotional journey a viewer goes through start to finish
-- Why someone would send this to a friend
-- The core irresistible hook that makes it impossible to scroll past
-- Specific subjects/entities visible in the video (for SEO)
-- Exactly 3 title seeds (click triggers). Each seed must be:
+- The single most striking/funny/shocking moment and exactly when it happens (key_moment)
+- The most confusing, unexplained, or bizarre detail in the video (most_confusing_detail)
+- If the video is a meme, the literal premise/joke of the meme (meme_premise)
+- The literal relatability reason (relatability_reason)
+- Specific subjects/entities visible in the video (subject_entities)
+- Exactly 3 title seeds / click triggers (click_triggers). Each seed must be:
   • one specific moment
   • visually observable
   • impossible to understand without seeing the clip
@@ -555,7 +529,10 @@ Focus on:
   Bad: person gets surprised
   Good: he keeps checking under the couch for something
 
-Be specific and visual. Reference exact moments in the video."""
+Be specific and visual. Reference exact moments in the video.
+
+FINAL GROUNDING CHECK:
+Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, do not include it."""
 
             analysis = None
             quota_exhausted_models = 0
@@ -566,16 +543,15 @@ Be specific and visual. Reference exact moments in the video."""
                         contents=[video_file],
                         schema=VideoDNA,
                         max_tokens=1500,
-                        temperature=0.7,
+                        temperature=0.3,
                         sys_instruct=phase1_prompt,
                     )
                     if analysis:
-                        logger.info(f"[PHASE 1] Done. Core hook: {analysis.get('core_hook', 'N/A')}")
+                        logger.info(f"[PHASE 1] Done. Meme premise: {analysis.get('meme_premise', 'N/A')}")
                         logger.info(
-                            "[PHASE 1] Confusing: %s | Strange: %s | First noticed: %s",
+                            "[PHASE 1] Confusing: %s | Relatability: %s",
                             analysis.get("most_confusing_detail"),
-                            analysis.get("strangest_visual_detail"),
-                            analysis.get("what_a_friend_would_notice_first"),
+                            analysis.get("relatability_reason"),
                         )
                         logger.info(f"[PHASE 1] Title seeds: {analysis.get('click_triggers', [])}")
                         break
@@ -595,45 +571,31 @@ Be specific and visual. Reference exact moments in the video."""
             # ════════════════════ PHASE 2: TITLE GENERATION ════════════════════
             logger.info("[PHASE 2] Generating title candidates...")
 
-            # Techniques that reliably produce grounded, specific titles.
-            # Removed "incomplete comparison" (produces fragment garbage like "funnier than—")
-            # and "deadpan label" (produces corporate-speak like "individual disrupts equilibrium").
-            # Both fail because they're abstract methods that don't anchor to specific content.
-            _TITLE_PERSPECTIVES = [
-                "someone confused by the clip",
-                "someone who sees themselves in the situation",
-                "someone who noticed a weird detail",
-                "someone worried about what happens next",
-                "someone disagreeing with what's happening",
-            ]
-            perspectives_block = "\n".join(f"- {p}" for p in _TITLE_PERSPECTIVES)
             seeds_block = "\n".join(f"  • {s}" for s in analysis.get("click_triggers", []))
 
-            phase2_prompt = f"""Imagine you watched this clip and immediately sent it to a friend.{brief_block}
+            phase2_prompt = f"""You are not a critic.
+You are not a psychologist.
+You are not a marketer.
+You are not a storyteller.
 
-What would you type when sending this clip to one friend? That's the title.
+You are a person who just watched a short clip and is casually posting it.
 
-Pretend your friend can only see the title and a thumbnail.
-The title's job is to make them ask for the missing context.
+Write titles the way someone would text a friend after seeing this clip.{brief_block}
 
-Do not optimize. Do not advertise. Do not summarize. Just make someone need to click.
+A title should feel like:
+- an observation
+- a reaction
+- an opinion
+- a question
 
----
+Never:
+- summarize
+- explain
+- market
+- optimize
+- narrate
 
-Guiding principle:
-
-The more specific the setup,
-and the less complete the explanation,
-the stronger the title usually is.
-
-Titles should feel discovered, not manufactured.
-
-The viewer should think:
-"why did that happen?"
-"What am I missing?"
-"there's definitely context here."
-
-Never answer those questions in the title.
+Titles should sound slightly lazy and imperfect.
 
 ---
 
@@ -644,12 +606,6 @@ Examples of GOOD titles:
 - he keeps checking the same drawer
 - the cashier's face at the end 😭
 
-Why they're good:
-- specific
-- incomplete
-- imply a story
-- could only belong to one kind of clip
-
 Examples of BAD titles:
 - you won't believe what happened
 - funniest video ever
@@ -658,31 +614,12 @@ Examples of BAD titles:
 - watch until the end
 - incredible moment caught on camera
 
-Bad titles:
-- explain
-- summarize
-- advertise
-- use generic templates
-- could belong to another video
-
-Reject anything that does these things.
-
-Avoid defaulting to reaction memes, Twitter captions, or Reddit-style comments (e.g., "bro really said", "nah because why", "i'm crying 😭"). Prefer describing a specific thing that happened in the clip.
-
 ---
 
-All 5 titles MUST feel meaningfully different.
-A reader should believe they were written by five different people.
-Do not simply reword the same idea.
-
-For each candidate, privately run this self-critique rubric and discard any that fail:
-1. Could this fit 1000 other videos? (If yes, discard)
-2. Does it reveal the ending? (If yes, discard)
-3. Does it sound like marketing? (If yes, discard)
-4. Does it mention a specific visual detail? (If no, discard)
-5. Would I genuinely click this? (If no, discard)
-6. Does it sound like it came from an AI title generator? (If yes, discard immediately)
-7. If replacing one noun makes the title fit another video, is it too generic? (If yes, discard. e.g., "the dog did something weird" -> "the cat did something weird" still works. Whereas "the dog freezes every time the microwave beeps" falls apart if you swap nouns.)
+Generate five titles.
+Do not force them to be different.
+Generate the five titles you genuinely think a real uploader might use.
+Some titles may end up similar. That is acceptable.
 
 ---
 
@@ -690,22 +627,13 @@ Everything in this title must come from what's actually visible in THIS specific
 
 VIDEO ANALYSIS:
 KEY MOMENT: {analysis['key_moment']}
-MOST CONFUSING DETAIL: {analysis['most_confusing_detail']}
-STRANGEST VISUAL DETAIL: {analysis['strangest_visual_detail']}
-WHAT A FRIEND WOULD NOTICE FIRST: {analysis['what_a_friend_would_notice_first']}
-EMOTIONAL ARC: {analysis['emotional_arc']}
-SHAREABILITY: {analysis['shareability_factor']}
-CORE HOOK: {analysis['core_hook']}
-SUBJECTS: {', '.join(analysis['subject_entities'])}
+MEME PREMISE: {analysis['meme_premise']}
 
 RAW TITLE SEEDS (specific observations from the analyst — use these as your starting material):
 {seeds_block}
 
-For each of the 5 candidate titles, write from one of the following natural human perspectives/reactions:
-{perspectives_block}
-
-THE ONLY RULE THAT MATTERS: a title must CREATE a gap, not CLOSE one.
-If a viewer reads it and already knows how the video ends — you've failed.
+A reader should feel: "wait, why?"
+Do not intentionally engineer curiosity. Simply describe an incomplete situation.
 State the SETUP only. The outcome, punchline, and twist must not appear in the title.
 
 ALL OTHER RULES (every candidate must satisfy all of these):
@@ -716,34 +644,10 @@ ALL OTHER RULES (every candidate must satisfy all of these):
 - No emojis unless one specific emoji is doing real comedic work (most titles don't need one)
 - Fragments, slightly wrong grammar, weird specificity — all acceptable, all real
 
-Rank titles by this priority:
-1. Specificity
-2. Curiosity gap
-3. Visual imagery
-4. Emotional reaction
-5. Brevity
+FINAL GROUNDING CHECK:
+Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, do not include it.
 
-The first criterion dominates all others.
-A highly specific title should beat a clever but generic title every time.
-
-Do not rush.
-Privately brainstorm several possibilities.
-Return only the strongest 5.
-
-The title should feel like a sentence that escaped from the middle of a conversation.
-
-Examples:
-✅
-- the dog won't go near that hallway anymore
-- he kept looking behind the vending machine
-- nobody reacted when the alarm went off
-
-❌
-- funniest dog ever
-- wait until the end
-- crazy moment caught on camera
-
-When in doubt: mention a strange detail, leave out the explanation, and trust the viewer's curiosity."""
+Do not rush. Return only the strongest 5."""
 
             best_title = None
             last_title_data = None  # kept for quality-gate fallback
@@ -756,7 +660,7 @@ When in doubt: mention a strange detail, leave out the explanation, and trust th
                         contents=[video_file],
                         schema=TitleStudio,
                         max_tokens=2000,
-                        temperature=1.0,
+                        temperature=0.9,
                         sys_instruct=phase2_prompt,
                         max_attempts=3,
                     )
@@ -820,46 +724,71 @@ When in doubt: mention a strange detail, leave out the explanation, and trust th
             # ════════════════════ PHASE 3: SUPPORTING METADATA ════════════════════
             logger.info("[PHASE 3] Generating description, tags, and engagement metadata...")
 
-            _DESCRIPTION_STYLES = [
-                "observation (e.g., 'he was doing this for five minutes before i started recording')",
-                "mini-story (e.g., 'apparently this happens every morning')",
-                "opinion / reaction (e.g., 'i still don't know why the dog hates this hallway')",
-                "deadpan statement / extra context (e.g., 'the cashier noticed it instantly' or 'the weird part is nobody else reacted')",
-                "question (not generic engagement like 'what do you think', but a specific question related to the scene. Note: Questions should be used less often than other styles — do not default to this style.)",
-            ]
-            chosen_style = random.choices(
-                _DESCRIPTION_STYLES,
-                weights=[3, 3, 3, 3, 1]
-            )[0]
+            phase3_prompt = f"""You are not a critic.
+You are not a psychologist.
+You are not a marketer.
+You are not a storyteller.
 
-            phase3_prompt = f"""You are writing the description for ONE YouTube Short.
+You are a person who just watched a short clip and is casually posting it.
+The description should feel like something someone typed in under a minute, not something they spent 10 minutes composing.
+
+You are writing the description for ONE YouTube Short.
 Write it the way an actual person posting THIS specific video would — casual and specific.{brief_block}
 
 VIDEO ANALYSIS:
 - Key moment: {analysis['key_moment']}
+- Meme premise: {analysis['meme_premise']}
+- Relatability reason: {analysis['relatability_reason']}
 - Subjects: {', '.join(analysis['subject_entities'])}
 
 CHOSEN TITLE: "{best_title}"
 
-REQUIRED DESCRIPTION STYLE FOR THIS VIDEO: {chosen_style}
+DESCRIPTION LENGTH:
+- 1-3 sentences
+- Target 200-400 characters before hashtags. Do not add filler just to reach the target length.
+- Prefer two medium sentences or three short ones.
+- Stop once the thought feels complete
 
-The description should feel like the second thing someone says after showing a friend the clip.
-(If the title is the sentence that escaped from the middle of a conversation, the description is the next sentence in that conversation.)
+The description should be 1-3 natural sentences and around 200-400 characters before hashtags.
+Write it like a real person talking about the clip after posting it.
 
-- The description's job is to reward curiosity created by the title. Add exactly one new piece of information (e.g., if Title is "the dog won't go near that hallway anymore", a Good description is "he's avoided that corner for three days now").
-- Do not explain everything or solve the mystery. Never restate the title.
-- Keep it sounding like it was typed in under 10 seconds. Fragments, sentence fragments, lowercase, and incomplete thoughts are acceptable.
-- Never use phrasing like "this clip", "this video", "this one", "caught on camera", or typical AI-intro phrasing ("In this video...", "Welcome back...", "Here's what happens...").
-- Never ask generic engagement questions ("what do you think?", "like and subscribe").
-- Avoid sounding like corporate SEO copy.
-- If it could be copied onto another upload with minimal changes, reject it. It must belong uniquely to THIS video.
+PREFERRED STRUCTURE:
+Sentence 1:
+specific observation from the clip.
+Sentence 2:
+reaction, opinion, or common experience directly implied by the clip.
+Sentence 3 (optional):
+one final deadpan comment.
+Stop.
+
+The description may include:
+- one additional observation
+- a reaction or opinion about the joke
+- brief context directly visible in the video or explicitly stated in on-screen text
+- a common experience directly implied by the clip
+
+Naturally mention important subjects and themes from the clip when relevant.
+
+Never:
+- invent off-screen information
+- create lore or backstories
+- diagnose people
+- explain hidden meanings
+- use marketing language
+- write generic engagement bait
+
+The description should read like a friend talking about the clip, not like SEO copy.
+
+UNIQUENESS CHECK:
+If this description could fit more than 20% of YouTube Shorts, rewrite it.
+Mention at least one specific detail from THIS clip.
 
 Examples of GOOD description lines:
-• he was doing this for five minutes before i started recording
-• apparently this happens every morning
-• i still don't know why the dog hates this hallway
-• the cashier noticed it instantly
-• the weird part is nobody else reacted
+• I thought he had finally fixed his sleep schedule until the text said he was actually going to bed at 6 AM. The parents celebrating somehow makes this even worse because they're genuinely proud of him.
+
+• The dog freezes every single time that drawer opens and nobody else in the room seems concerned about it anymore. At some point they probably just accepted that this is his enemy.
+
+• I thought this was about to be another sad breakup edit and then the last line completely changed the mood. The switch happens so fast that your brain barely catches up.
 
 Examples of BAD description lines:
 • watch this hilarious dog video
@@ -873,11 +802,11 @@ Before returning the description, privately run this self-critique rubric and di
 2. Did I solve the mystery? (If yes, discard)
 3. Does this sound like a YouTube template? (If yes, discard)
 4. Would a real person type this? (If no, discard)
-5. Did I add exactly one new piece of information? (If no, discard)
+5. Did I follow the sentence length (1-3 sentences, 200-400 chars)? (If no, discard)
 
 HASHTAG RULES (placed at the end on a single line, same field):
 - 10 to 13 hashtags total, niche-first then mainstream. Vary count and split slightly each time.
-- Priority: (1) exact subjects in the video, (2) exact category of content, (3) broad discovery hashtags.
+- Generate hashtags strictly from: subjects, central/meme premise, and content category.
 - Discovery labels, not SEO stuffing. If removing a hashtag would not improve discoverability, do not include it (avoid filler like #omg, #cool, #lol, #awesome).
 - Never use banned hashtags: #fyp, #foryou, #viral, #xyzbca, #explorepage, #blowup.
 
@@ -896,7 +825,17 @@ TAG RULES ("tags" field, separate from hashtags):
 PINNED COMMENT: Short opinionated question that FORCES replies. Under 15 words.
 Sound like a nosy person stirring something, not a survey.
 
-THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max CTR."""
+THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max CTR.
+
+FINAL GROUNDING CHECK:
+For every title, description, hashtag, and tag:
+Could someone point at the video and say "yes, that's in there" or "yes, that's the obvious joke"? If not, remove it/do not include it.
+
+Every sentence in the description must pass this test:
+1. Could someone verify this by watching the clip?
+OR
+2. Is this an obvious reaction to the joke?
+If neither is true, remove the sentence."""
 
             metadata = None
             quota_exhausted_models = 0
@@ -904,10 +843,10 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
                 try:
                     metadata = await _call_gemini(
                         client, model,
-                        contents=["Produce the PublishingPackage."],
+                        contents=[video_file, "Produce the PublishingPackage."],
                         schema=PublishingPackage,
                         max_tokens=1500,
-                        temperature=0.8,
+                        temperature=0.6,
                         sys_instruct=phase3_prompt,
                     )
                     if metadata:
@@ -939,8 +878,8 @@ THUMBNAIL: Most dramatic frame, specific timestamp, overlay suggestion for max C
                 "thumbnail_recommendation": metadata["thumbnail_recommendation"],
                 "pinned_comment_suggestion": metadata["pinned_comment_suggestion"],
                 "video_analysis": analysis["key_moment"],
-                "target_emotion": analysis["emotional_arc"],
-                "hook_style": analysis["core_hook"],
+                "meme_premise": analysis["meme_premise"],
+                "relatability_reason": analysis["relatability_reason"],
             }
 
             logger.info(f"[DONE] Pipeline complete. Title: '{best_title}'")
