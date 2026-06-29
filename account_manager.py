@@ -61,11 +61,43 @@ def set_current_account(acc_id):
 def remove_account(acc_id):
     data = load_accounts()
     acc_id_str = str(acc_id)
-    if acc_id_str in data.get("accounts", {}):
-        del data["accounts"][acc_id_str]
-        if data.get("current_account") == acc_id_str:
-            data["current_account"] = next(iter(data["accounts"])) if data["accounts"] else None
-        save_accounts(data)
+    if acc_id_str not in data.get("accounts", {}):
+        return
+
+    del data["accounts"][acc_id_str]
+
+    # Renumber remaining accounts 1, 2, 3... and rename token files to match
+    old_current = data.get("current_account")
+    sorted_ids = sorted(data["accounts"].keys(), key=lambda x: int(x) if x.isdigit() else 0)
+    new_accounts = {}
+    id_remap = {}  # old_id -> new_id
+    for new_idx, old_id in enumerate(sorted_ids, start=1):
+        new_id = str(new_idx)
+        id_remap[old_id] = new_id
+        acc = data["accounts"][old_id]
+
+        # Rename token file on disk if the name would change
+        old_token = acc.get("token_file", "")
+        new_token = f"token_{new_id}.pickle"
+        if old_token != new_token:
+            old_path = os.path.join(_PROJECT_DIR, old_token)
+            new_path = os.path.join(_PROJECT_DIR, new_token)
+            if os.path.exists(old_path):
+                os.rename(old_path, new_path)
+            acc = dict(acc)
+            acc["token_file"] = new_token
+
+        new_accounts[new_id] = acc
+
+    data["accounts"] = new_accounts
+
+    # Update current_account to new ID, or pick first available
+    if old_current and old_current != acc_id_str:
+        data["current_account"] = id_remap.get(old_current, next(iter(new_accounts), None))
+    else:
+        data["current_account"] = next(iter(new_accounts), None)
+
+    save_accounts(data)
 
 def add_account(channel_name, new_token_file=None):
     migrate_legacy_token()
