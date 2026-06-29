@@ -5,6 +5,7 @@ import uuid
 import os
 import json
 import sys
+
 async def handle_get_auth_url(args):
     from auth import get_authorization_url
     print(get_authorization_url())
@@ -56,6 +57,27 @@ async def handle_set_acc(args):
     try:
         set_current_account(args.acc_id)
         print("SUCCESS")
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+
+async def handle_remove_acc(args):
+    from account_manager import remove_account, load_accounts
+    try:
+        data = load_accounts()
+        if str(args.acc_id) not in data.get("accounts", {}):
+            print(f"ERROR: Account ID {args.acc_id} does not exist.", file=sys.stderr)
+            sys.exit(1)
+        
+        # Optionally remove the token file as well
+        token_file = data["accounts"][str(args.acc_id)].get("token_file")
+        if token_file:
+            _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+            token_path = os.path.join(_PROJECT_DIR, token_file)
+            if os.path.exists(token_path):
+                os.remove(token_path)
+        
+        remove_account(args.acc_id)
+        print(f"SUCCESS: Account ID {args.acc_id} removed.")
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
@@ -373,6 +395,8 @@ async def main():
     subparsers.add_parser("acc_list", help="List all accounts")
     set_acc_parser = subparsers.add_parser("set_acc", help="Set current account")
     set_acc_parser.add_argument('--acc_id', required=True, help="Account ID to set as current")
+    remove_acc_parser = subparsers.add_parser("remove_acc", help="Remove an account")
+    remove_acc_parser.add_argument('--acc_id', required=True, help="Account ID to remove")
     subparsers.add_parser("whoami", parents=[common], help="Get current account name")
     
     sync_acc_parser = subparsers.add_parser("sync_acc", help="Sync/Update channel name from YouTube API")
@@ -400,6 +424,8 @@ async def main():
         await handle_acc_list(args)
     elif args.command == "set_acc":
         await handle_set_acc(args)
+    elif args.command == "remove_acc":
+        await handle_remove_acc(args)
     elif args.command == "whoami":
         await handle_whoami(args)
     elif args.command == "sync_acc":
